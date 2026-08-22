@@ -36,7 +36,14 @@ CREATE TABLE IF NOT EXISTS payment.operations
                 'COMPLETED',
                 'REJECTED'
             )
-        )
+        ),
+
+    CONSTRAINT ck_operation_amount
+        CHECK (amount > 0),
+
+    CONSTRAINT ck_operation_request_id
+        CHECK (length(request_id) BETWEEN 1 AND 128)
+
 );
 
 CREATE TABLE IF NOT EXISTS payment.operation_events
@@ -50,6 +57,11 @@ CREATE TABLE IF NOT EXISTS payment.operation_events
     payload_hash    text NOT NULL,
 
     occurred_at     timestamptz NOT NULL DEFAULT now(),
+
+
+    CONSTRAINT ck_event_payload_hash
+        CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
+
 
     CONSTRAINT fk_operation_event_operation
         FOREIGN KEY (operation_id)

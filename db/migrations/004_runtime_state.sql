@@ -8,7 +8,11 @@ CREATE TABLE IF NOT EXISTS runtime.idempotency
     created_at        timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT pk_idempotency
-        PRIMARY KEY (scope_key, idempotency_key)
+        PRIMARY KEY (scope_key, idempotency_key),
+
+    CONSTRAINT ck_idempotency_payload_hash
+        CHECK (payload_hash ~ '^[0-9a-f]{64}$')
+
 );
 
 CREATE TABLE IF NOT EXISTS runtime.action_dispatches
@@ -35,5 +39,10 @@ CREATE TABLE IF NOT EXISTS runtime.action_dispatches
         CHECK (status IN ('OK', 'ERROR')),
 
     CONSTRAINT ck_dispatch_version
-        CHECK (version >= 1)
+        CHECK (version >= 1),
+
+    CONSTRAINT ck_dispatch_payload_hash
+        CHECK (payload_hash ~ '^[0-9a-f]{64}$')
+
+
 );

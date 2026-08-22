@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS runtime.action_definitions
             )
         ),
 
+    CONSTRAINT ck_action_module_identifier
+        CHECK (module ~ '^[a-z][a-z0-9_]{0,62}$'),
+
+    CONSTRAINT ck_action_name_identifier
+        CHECK (action ~ '^[a-z][a-z0-9_]{0,62}$'),
+
+    CONSTRAINT ck_target_schema_identifier
+        CHECK (target_schema ~ '^[a-z][a-z0-9_]{0,62}$'),
+
+    CONSTRAINT ck_target_function_identifier
+        CHECK (target_function ~ '^[a-z][a-z0-9_]{0,62}$'),
+
     CONSTRAINT ck_action_idempotency_scope
         CHECK (
             idempotency_scope IN (
@@ -60,8 +72,31 @@ CREATE TABLE IF NOT EXISTS runtime.action_definitions
                 'consumer_action',
                 'global_action'
             )
+        ),
+
+    CONSTRAINT ck_action_idempotency_pair
+        CHECK (
+            (idempotency_mode = 'none'
+                AND idempotency_scope = 'none')
+            OR
+            (idempotency_mode IN ('optional', 'required')
+                AND idempotency_scope IN (
+                    'principal_action',
+                    'consumer_action',
+                    'global_action'
+                ))
+        ),
+
+    CONSTRAINT ck_default_requires_enabled
+        CHECK (NOT is_default OR enabled),
+
+    CONSTRAINT ck_manifest_hash_sha256
+        CHECK (
+            manifest_hash ~ '^[0-9a-f]{64}$'
         )
+
 );
+
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_action_one_default
     ON runtime.action_definitions (module, action)
