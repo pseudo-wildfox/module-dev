@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/api/">
+    <Project Path="api/Api.csproj" />
+  </Folder>
+  <Folder Name="/cli/">
+    <Project Path="cli/Cli.csproj" />
+  </Folder>
+  <Folder Name="/gateway/">
+    <Project Path="gateway/Gateway.csproj" />
+  </Folder>
+</Solution>

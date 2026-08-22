@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: course
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d course"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      COURSE_JWT_ISSUER: moduledev-course
+      COURSE_JWT_AUDIENCE: moduledev-api
+      COURSE_JWT_SIGNING_KEY: development-development-development-development
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_started
+
+  cli:
+    build:
+      context: .
+      dockerfile: cli/Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: course
+      DB_USER: course_migrator
+      DB_PASSWORD: course_migrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
