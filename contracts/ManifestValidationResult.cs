@@ -1,4 +1,4 @@
-namespace ModuleDev.Api.Validation;
+namespace ModuleDev.Contracts.Validation;
 
 public sealed class ManifestValidationResult
 {

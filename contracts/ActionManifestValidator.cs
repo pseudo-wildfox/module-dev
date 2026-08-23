@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Json.Schema;
 
-namespace ModuleDev.Api.Validation;
+namespace ModuleDev.Contracts.Validation;
 
 public sealed class ActionManifestValidator
 {

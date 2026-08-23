@@ -19,17 +19,12 @@ public sealed class CliOutput
         _contractVersion = contractVersion;
     }
 
-    public int Success(object result)
+    public int Success<T>(T result)
     {
-        var response = new
-        {
-            status = "ok",
-            result,
-            meta = new
-            {
-                contractVersion = _contractVersion
-            }
-        };
+        var response = new CliSuccessResponse<T>(
+            Status: "ok",
+            Result: result,
+            Meta: new CliMeta(_contractVersion));
 
         WriteJson(response);
 
@@ -41,17 +36,12 @@ public sealed class CliOutput
         string message,
         object? details = null)
     {
-        var response = new
-        {
-            status = "error",
-            code,
-            message,
-            details = details ?? new { },
-            meta = new
-            {
-                contractVersion = _contractVersion
-            }
-        };
+        var response = new CliErrorResponse(
+            Status: "error",
+            Code: code,
+            Message: message,
+            Details: details ?? new { },
+            Meta: new CliMeta(_contractVersion));
 
         WriteJson(response);
 
@@ -65,10 +55,10 @@ public sealed class CliOutput
 
     public void WriteDiagnostic(Exception exception)
     {
-        Console.Error.WriteLine(exception.ToString());
+        Console.Error.WriteLine(exception);
     }
 
-    private static void WriteJson(object value)
+    private static void WriteJson<T>(T value)
     {
         var json = JsonSerializer.Serialize(value, JsonOptions);
 

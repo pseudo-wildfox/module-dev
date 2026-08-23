@@ -5,6 +5,9 @@
   <Folder Name="/cli/">
     <Project Path="cli/Cli.csproj" />
   </Folder>
+  <Folder Name="/contracts/">
+    <Project Path="contracts/ModuleDev.Contracts.csproj" />
+  </Folder>
   <Folder Name="/gateway/">
     <Project Path="gateway/Gateway.csproj" />
   </Folder>
