@@ -6,15 +6,20 @@ namespace ModuleDev.Cli.Commands;
 public sealed class CommandDispatcher
 {
     private readonly MigrationService _migrations;
+    private readonly ActionValidateCommand _actionValidate;
     private readonly CliOutput _output;
+
 
     public CommandDispatcher(
         MigrationService migrations,
+        ActionValidateCommand actionValidate,
         CliOutput output)
     {
         _migrations = migrations;
+        _actionValidate = actionValidate;
         _output = output;
     }
+
 
     public async Task<int> ExecuteAsync(
         string[] args,
@@ -23,9 +28,10 @@ public sealed class CommandDispatcher
         if (args.Length == 0)
         {
             return _output.Error(
-                code: "request.invalid",
-                message: "command is required");
+                "request.invalid",
+                "command is required");
         }
+
 
         if (IsCommand(args, "migration", "apply"))
         {
@@ -34,10 +40,21 @@ public sealed class CommandDispatcher
                 cancellationToken);
         }
 
+
+        if (IsCommand(args, "action", "validate"))
+        {
+            return await ExecuteActionValidateAsync(
+                args,
+                cancellationToken);
+        }
+
+
         return _output.Error(
-            code: "request.invalid",
-            message: "unsupported command");
+            "request.invalid",
+            "unsupported command");
     }
+
+
 
     private async Task<int> ExecuteMigrationApplyAsync(
         string[] args,
@@ -46,16 +63,36 @@ public sealed class CommandDispatcher
         if (args.Length != 3)
         {
             return _output.Error(
-                code: "request.invalid",
-                message: "usage: migration apply <directory>");
+                "request.invalid",
+                "usage: migration apply <directory>");
         }
 
-        var directory = args[2];
 
         return await _migrations.ApplyAsync(
-            directory,
+            args[2],
             cancellationToken);
     }
+
+
+
+    private async Task<int> ExecuteActionValidateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                "request.invalid",
+                "usage: action validate <manifest>");
+        }
+
+
+        return await _actionValidate.ExecuteAsync(
+            args[2],
+            cancellationToken);
+    }
+
+
 
     private static bool IsCommand(
         string[] args,
@@ -63,11 +100,13 @@ public sealed class CommandDispatcher
         string second)
     {
         return args.Length >= 2
-               && args[0].Equals(
-                   first,
-                   StringComparison.OrdinalIgnoreCase)
-               && args[1].Equals(
-                   second,
-                   StringComparison.OrdinalIgnoreCase);
+            &&
+            args[0].Equals(
+                first,
+                StringComparison.OrdinalIgnoreCase)
+            &&
+            args[1].Equals(
+                second,
+                StringComparison.OrdinalIgnoreCase);
     }
 }
