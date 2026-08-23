@@ -48,7 +48,9 @@ services:
       DB_PORT: 5432
       DB_NAME: course
       DB_USER: course_migrator
-      DB_PASSWORD: course_migrator
+      DB_PASSWORD: course-migrator-dev
+    volumes:
+      - ./db/migrations:/migrations:ro
     depends_on:
       postgres:
         condition: service_healthy
