@@ -1,4 +1,4 @@
-using ModuleDev.Api.Validation;
+using ModuleDev.Contracts.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 

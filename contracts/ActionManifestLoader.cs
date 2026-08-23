@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ModuleDev.Api.Contracts;
+namespace ModuleDev.Contracts;
 
 public static class ActionManifestLoader
 {

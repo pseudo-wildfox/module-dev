@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ModuleDev.Api.Contracts;
+namespace ModuleDev.Contracts;
 
 public sealed class ActionManifest
 {
