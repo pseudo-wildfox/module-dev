@@ -1,25 +1,26 @@
 -- ============================================================
 -- 001-ownership-and-grants.sql
 --
--- Applied by administrative bootstrap only.
+-- Security configuration for application objects.
 --
--- Ownership model:
+-- Executed after all migrations.
 --
---   course_owner       NOLOGIN
---       owns application schemas/objects
+-- Roles:
 --
---   course_migrator    LOGIN
---       may SET ROLE course_owner for migrations
+--   course_owner
+--       NOLOGIN owner of application schemas and objects.
 --
---   course_publisher   LOGIN
---       may publish/activate action definitions
+--   course_migrator
+--       migration runner.
 --
---   course_runtime     LOGIN
---       application runtime
+--   course_publisher
+--       action publication CLI.
 --
--- Important:
---   course_runtime has NO direct DML access to payment tables.
---   Subject changes happen through trusted PostgreSQL functions.
+--   course_runtime
+--       API runtime.
+--
+-- The PostgreSQL superuser is outside the application threat
+-- model.
 -- ============================================================
 
 
@@ -27,18 +28,22 @@
 -- 1. Schema ownership
 -- ============================================================
 
-ALTER SCHEMA api OWNER TO course_owner;
-ALTER SCHEMA runtime OWNER TO course_owner;
-ALTER SCHEMA payment OWNER TO course_owner;
-ALTER SCHEMA autocheck OWNER TO course_owner;
-
-
--- ============================================================
--- 2. Existing table ownership
--- ============================================================
-
-ALTER TABLE runtime.schema_migrations
+ALTER SCHEMA api
     OWNER TO course_owner;
+
+ALTER SCHEMA runtime
+    OWNER TO course_owner;
+
+ALTER SCHEMA payment
+    OWNER TO course_owner;
+
+ALTER SCHEMA autocheck
+    OWNER TO course_owner;
+
+
+-- ============================================================
+-- 2. Application object ownership
+-- ============================================================
 
 ALTER TABLE runtime.action_definitions
     OWNER TO course_owner;
@@ -57,44 +62,82 @@ ALTER TABLE payment.operation_events
 
 
 -- ============================================================
--- 3. Remove default PUBLIC access
+-- 3. Remove PUBLIC access
 -- ============================================================
 
-REVOKE ALL ON SCHEMA api FROM PUBLIC;
-REVOKE ALL ON SCHEMA runtime FROM PUBLIC;
-REVOKE ALL ON SCHEMA payment FROM PUBLIC;
-REVOKE ALL ON SCHEMA autocheck FROM PUBLIC;
+REVOKE ALL
+    ON SCHEMA api
+    FROM PUBLIC;
 
-REVOKE ALL ON ALL TABLES IN SCHEMA api FROM PUBLIC;
-REVOKE ALL ON ALL TABLES IN SCHEMA runtime FROM PUBLIC;
-REVOKE ALL ON ALL TABLES IN SCHEMA payment FROM PUBLIC;
-REVOKE ALL ON ALL TABLES IN SCHEMA autocheck FROM PUBLIC;
+REVOKE ALL
+    ON SCHEMA runtime
+    FROM PUBLIC;
 
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA runtime FROM PUBLIC;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA payment FROM PUBLIC;
+REVOKE ALL
+    ON SCHEMA payment
+    FROM PUBLIC;
 
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA api FROM PUBLIC;
+REVOKE ALL
+    ON SCHEMA autocheck
+    FROM PUBLIC;
+
+
+REVOKE ALL
+    ON ALL TABLES IN SCHEMA api
+    FROM PUBLIC;
+
+REVOKE ALL
+    ON ALL TABLES IN SCHEMA runtime
+    FROM PUBLIC;
+
+REVOKE ALL
+    ON ALL TABLES IN SCHEMA payment
+    FROM PUBLIC;
+
+REVOKE ALL
+    ON ALL TABLES IN SCHEMA autocheck
+    FROM PUBLIC;
+
+
+REVOKE ALL
+    ON ALL SEQUENCES IN SCHEMA runtime
+    FROM PUBLIC;
+
+REVOKE ALL
+    ON ALL SEQUENCES IN SCHEMA payment
+    FROM PUBLIC;
+
+
+REVOKE ALL
+    ON ALL FUNCTIONS IN SCHEMA api
+    FROM PUBLIC;
 
 
 -- ============================================================
--- 4. course_runtime schema access
+-- 4. Runtime schema access
 -- ============================================================
 
-GRANT USAGE ON SCHEMA api
+GRANT USAGE
+    ON SCHEMA api
     TO course_runtime;
 
-GRANT USAGE ON SCHEMA runtime
+GRANT USAGE
+    ON SCHEMA runtime
     TO course_runtime;
 
-GRANT USAGE ON SCHEMA payment
+GRANT USAGE
+    ON SCHEMA payment
     TO course_runtime;
 
-GRANT USAGE ON SCHEMA autocheck
+GRANT USAGE
+    ON SCHEMA autocheck
     TO course_runtime;
 
 
 -- ============================================================
--- 5. course_runtime: action catalog is read-only
+-- 5. Runtime: action catalog
+--
+-- Runtime can inspect the catalog but cannot modify it.
 -- ============================================================
 
 GRANT SELECT
@@ -103,28 +146,31 @@ GRANT SELECT
 
 
 -- ============================================================
--- 6. course_runtime: idempotency storage
+-- 6. Runtime: idempotency
 --
 -- Runtime needs:
---   SELECT  -> inspect existing key/result
---   INSERT  -> reserve a new key
---   UPDATE  -> store final response
 --
--- DELETE is deliberately forbidden.
+--   SELECT  existing record
+--   INSERT  new key
+--   UPDATE  final response
+--
+-- DELETE is forbidden.
 -- ============================================================
 
 GRANT SELECT, INSERT, UPDATE
     ON runtime.idempotency
     TO course_runtime;
 
+REVOKE DELETE
+    ON runtime.idempotency
+    FROM course_runtime;
+
 
 -- ============================================================
--- 7. course_runtime: dispatch evidence
+-- 7. Runtime: dispatches
 --
--- Dispatch records are written by api.invoke() under
--- SECURITY DEFINER / course_owner.
---
--- Runtime only needs read access for diagnostics.
+-- Dispatch evidence is written by trusted database code.
+-- Runtime only reads it.
 -- ============================================================
 
 GRANT SELECT
@@ -132,8 +178,18 @@ GRANT SELECT
     TO course_runtime;
 
 
+REVOKE INSERT, UPDATE, DELETE
+    ON runtime.action_dispatches
+    FROM course_runtime;
+
+
 -- ============================================================
--- 8. course_runtime: absolutely no direct subject-table DML
+-- 8. Runtime: subject state
+--
+-- Direct access is forbidden.
+--
+-- Subject changes must happen through registered PostgreSQL
+-- functions and the api.invoke() transaction boundary.
 -- ============================================================
 
 REVOKE ALL
@@ -146,24 +202,30 @@ REVOKE ALL
 
 
 -- ============================================================
--- 9. course_runtime: no direct catalog mutation
+-- 9. Runtime: catalog mutation
 -- ============================================================
 
 REVOKE INSERT, UPDATE, DELETE
     ON runtime.action_definitions
     FROM course_runtime;
 
-REVOKE DELETE
-    ON runtime.idempotency
-    FROM course_runtime;
-
-REVOKE INSERT, UPDATE, DELETE
-    ON runtime.action_dispatches
-    FROM course_runtime;
-
 
 -- ============================================================
--- 10. course_publisher
+-- 10. Publisher
+--
+-- Publisher can:
+--
+--   SELECT published definitions
+--   INSERT a new immutable version
+--   UPDATE only enabled/is_default
+--
+-- Publisher cannot:
+--
+--   DELETE definitions
+--   modify target
+--   modify schemas
+--   modify policy
+--   modify idempotency configuration
 -- ============================================================
 
 GRANT USAGE
@@ -174,25 +236,21 @@ GRANT SELECT
     ON runtime.action_definitions
     TO course_publisher;
 
--- Publication creates a new immutable version.
 GRANT INSERT
     ON runtime.action_definitions
     TO course_publisher;
 
--- Operational state is mutable.
--- Only these two columns may be updated.
 GRANT UPDATE (enabled, is_default)
     ON runtime.action_definitions
     TO course_publisher;
 
--- Explicitly forbid deletion.
 REVOKE DELETE
     ON runtime.action_definitions
     FROM course_publisher;
 
 
 -- ============================================================
--- 11. course_publisher: identity sequence
+-- 11. Publisher identity sequence
 -- ============================================================
 
 GRANT USAGE, SELECT
@@ -201,15 +259,26 @@ GRANT USAGE, SELECT
 
 
 -- ============================================================
--- 12. course_migrator
+-- 12. Publisher must not touch subject state
+-- ============================================================
+
+REVOKE ALL
+    ON payment.operations
+    FROM course_publisher;
+
+REVOKE ALL
+    ON payment.operation_events
+    FROM course_publisher;
+
+
+-- ============================================================
+-- 13. Migration runner
 --
--- Migration runner connects as course_migrator and executes:
+-- course_migrator normally executes:
 --
 --     SET ROLE course_owner;
 --
--- Therefore migration DDL is performed by course_owner.
---
--- No application runtime permissions are granted here.
+-- Therefore no application DML permissions are required here.
 -- ============================================================
 
 GRANT USAGE
@@ -230,23 +299,10 @@ GRANT USAGE
 
 
 -- ============================================================
--- 13. Explicitly protect subject tables from application roles
--- ============================================================
-
-REVOKE ALL
-    ON payment.operations
-    FROM course_publisher, course_runtime;
-
-REVOKE ALL
-    ON payment.operation_events
-    FROM course_publisher, course_runtime;
-
-
--- ============================================================
 -- 14. autocheck
 --
--- Views will be created later.
--- Runtime will receive SELECT on those views only.
+-- Views will be created by later migrations.
+-- Runtime receives SELECT on the views themselves.
 -- ============================================================
 
 GRANT USAGE
@@ -255,33 +311,35 @@ GRANT USAGE
 
 
 -- ============================================================
--- 15. Default privileges for future objects created by
---     course_owner
---
--- This matters because migrations and trusted functions will
--- create additional objects later.
+-- 15. Default privileges for objects created by course_owner
 -- ============================================================
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA api
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA runtime
     REVOKE ALL ON TABLES FROM PUBLIC;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA payment
     REVOKE ALL ON TABLES FROM PUBLIC;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA autocheck
     REVOKE ALL ON TABLES FROM PUBLIC;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA runtime
     REVOKE ALL ON SEQUENCES FROM PUBLIC;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE course_owner
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
     IN SCHEMA payment
     REVOKE ALL ON SEQUENCES FROM PUBLIC;
