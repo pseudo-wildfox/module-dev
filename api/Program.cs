@@ -1,4 +1,5 @@
 using Npgsql;
+using System.Text.Json;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -8,6 +9,7 @@ using ModuleDev.Api.Runtime;
 using ModuleDev.Api.Security;
 using ModuleDev.Contracts.Validation;
 using ModuleDev.Contracts;
+using ModuleDev.Api.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,7 @@ builder.Services.AddScoped<IActionRepository, ActionRepository>();
 builder.Services.AddScoped<ActionVersionResolver>();
 builder.Services.AddSingleton<PolicyEvaluator>();
 builder.Services.AddSingleton<JwtContextFactory>();
+builder.Services.AddSingleton<RequestBodyReader>();
 
 var issuer =
     GetRequiredEnvironmentVariable("COURSE_JWT_ISSUER");
@@ -116,8 +119,11 @@ app.MapPost(
         ActionVersionResolver versionResolver,
         PolicyEvaluator policyEvaluator,
         JwtContextFactory contextFactory,
+        RequestBodyReader requestBodyReader,
         CancellationToken cancellationToken) =>
     {
+        var correlationId = Guid.NewGuid();
+
         var versionHeader =
             httpContext.Request.Headers["X-Action-Version"]
                 .FirstOrDefault();
@@ -141,7 +147,7 @@ app.MapPost(
                         details = new { },
                         meta = new
                         {
-                            correlationId = Guid.NewGuid(),
+                            correlationId,
                             actionVersion = (int?)null
                         }
                     },
@@ -173,7 +179,7 @@ app.MapPost(
                     details = new { },
                     meta = new
                     {
-                        correlationId = Guid.NewGuid(),
+                        correlationId,
                         actionVersion = explicitVersion
                     }
                 },
@@ -192,7 +198,7 @@ app.MapPost(
                     details = new { },
                     meta = new
                     {
-                        correlationId = Guid.NewGuid(),
+                        correlationId,
                         actionVersion = explicitVersion
                     }
                 },
@@ -219,7 +225,7 @@ app.MapPost(
                     details = new { },
                     meta = new
                     {
-                        correlationId = Guid.NewGuid(),
+                        correlationId,
                         actionVersion = manifest.Version
                     }
                 },
@@ -240,50 +246,78 @@ app.MapPost(
                     details = new { },
                     meta = new
                     {
-                        correlationId = Guid.NewGuid(),
+                        correlationId,
                         actionVersion = manifest.Version
                     }
                 },
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
-        var correlationId = Guid.NewGuid();
+        JsonDocument payload;
 
-        var requestId =
-            httpContext.Request.Headers["Idempotency-Key"]
-                .FirstOrDefault();
-
-        var deadline =
-            DateTimeOffset.UtcNow.AddMilliseconds(
-                manifest.TimeoutMs);
-
-        var context = new TrustedContext(
-            trustedPrincipal.Principal,
-            trustedPrincipal.Consumer,
-            trustedPrincipal.Scopes,
-            correlationId,
-            requestId,
-            deadline);
-
-        return Results.Ok(
-            new
-            {
-                status = "ok",
-                result = new
+        try
+        {
+            payload = await requestBodyReader.ReadAsync(
+                httpContext.Request,
+                cancellationToken);
+        }
+        catch (InvalidJsonRequestException)
+        {
+            return Results.Json(
+                new
                 {
-                    module = manifest.Module,
-                    action = manifest.Action,
-                    version = manifest.Version,
-                    principal = context.Principal,
-                    consumer = context.Consumer,
-                    scopes = context.Scopes
+                    status = "error",
+                    code = "request.invalid",
+                    message = "request body contains invalid JSON.",
+                    retryable = false,
+                    details = new { },
+                    meta = new
+                    {
+                        correlationId,
+                        actionVersion = manifest.Version
+                    }
                 },
-                meta = new
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        using (payload)
+        {
+            var requestId =
+                httpContext.Request.Headers["Idempotency-Key"]
+                    .FirstOrDefault();
+
+            var deadline =
+                DateTimeOffset.UtcNow.AddMilliseconds(
+                    manifest.TimeoutMs);
+
+            var context = new TrustedContext(
+                trustedPrincipal.Principal,
+                trustedPrincipal.Consumer,
+                trustedPrincipal.Scopes,
+                correlationId,
+                requestId,
+                deadline);
+
+            return Results.Ok(
+                new
                 {
-                    correlationId = context.CorrelationId,
-                    actionVersion = manifest.Version
-                }
-            });
+                    status = "ok",
+                    result = new
+                    {
+                        module = manifest.Module,
+                        action = manifest.Action,
+                        version = manifest.Version,
+                        principal = context.Principal,
+                        consumer = context.Consumer,
+                        scopes = context.Scopes
+                    },
+                    meta = new
+                    {
+                        correlationId = context.CorrelationId,
+                        actionVersion = manifest.Version
+                    }
+                });
+        }
     })
     .RequireAuthorization();
 
