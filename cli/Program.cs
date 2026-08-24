@@ -56,12 +56,19 @@ var actionList =
         output);
 
 
+var actionActivate =
+    new ActionActivateCommand(
+        database,
+        output);
+
+
 var dispatcher =
     new CommandDispatcher(
         migrations,
         actionValidate,
         actionPublish,
         actionList,
+        actionActivate,
         output);
 
 

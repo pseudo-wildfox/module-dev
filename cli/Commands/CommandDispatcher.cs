@@ -9,6 +9,7 @@ public sealed class CommandDispatcher
     private readonly ActionValidateCommand _actionValidate;
     private readonly ActionPublishCommand _actionPublish;
     private readonly ActionListCommand _actionList;
+    private readonly ActionActivateCommand _actionActivate;
     private readonly CliOutput _output;
 
     public CommandDispatcher(
@@ -16,12 +17,14 @@ public sealed class CommandDispatcher
         ActionValidateCommand actionValidate,
         ActionPublishCommand actionPublish,
         ActionListCommand actionList,
+        ActionActivateCommand actionActivate,
         CliOutput output)
     {
         _migrations = migrations;
         _actionValidate = actionValidate;
         _actionPublish = actionPublish;
         _actionList = actionList;
+        _actionActivate = actionActivate;
         _output = output;
     }
 
@@ -60,6 +63,13 @@ public sealed class CommandDispatcher
         if (IsCommand(args, "action", "list"))
         {
             return await ExecuteActionListAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "action", "activate"))
+        {
+            return await ExecuteActionActivateAsync(
                 args,
                 cancellationToken);
         }
@@ -129,6 +139,36 @@ public sealed class CommandDispatcher
         }
 
         return await _actionList.ExecuteAsync(
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteActionActivateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 5 ||
+            !args[3].Equals(
+                "--version",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: action activate <module.action> --version <version>");
+        }
+
+        if (!int.TryParse(
+                args[4],
+                out var version))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "version must be an integer");
+        }
+
+        return await _actionActivate.ExecuteAsync(
+            args[2],
+            version,
             cancellationToken);
     }
 
