@@ -48,7 +48,7 @@ public sealed class MigrationService
         }
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenOwnerConnectionAsync(
                 cancellationToken);
 
         var appliedCount = 0;
