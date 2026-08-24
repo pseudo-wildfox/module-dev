@@ -50,11 +50,18 @@ var actionPublish =
         output);
 
 
+var actionList =
+    new ActionListCommand(
+        database,
+        output);
+
+
 var dispatcher =
     new CommandDispatcher(
         migrations,
         actionValidate,
         actionPublish,
+        actionList,
         output);
 
 
