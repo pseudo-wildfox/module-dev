@@ -11,6 +11,7 @@ using ModuleDev.Contracts.Validation;
 using ModuleDev.Contracts;
 using ModuleDev.Api.Http;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 var schemaPath = Path.Combine(
@@ -30,6 +31,7 @@ builder.Services.AddScoped<ActionVersionResolver>();
 builder.Services.AddSingleton<PolicyEvaluator>();
 builder.Services.AddSingleton<JwtContextFactory>();
 builder.Services.AddSingleton<RequestBodyReader>();
+builder.Services.AddSingleton<ActionRequestValidator>();
 
 var issuer =
     GetRequiredEnvironmentVariable("COURSE_JWT_ISSUER");
@@ -120,6 +122,7 @@ app.MapPost(
         PolicyEvaluator policyEvaluator,
         JwtContextFactory contextFactory,
         RequestBodyReader requestBodyReader,
+        ActionRequestValidator requestValidator,
         CancellationToken cancellationToken) =>
     {
         var correlationId = Guid.NewGuid();
@@ -282,6 +285,27 @@ app.MapPost(
 
         using (payload)
         {
+            if (!requestValidator.IsValid(
+                    manifest.RequestSchema,
+                    payload.RootElement))
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "payload.invalid",
+                        message = "payload does not match schema.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
             var requestId =
                 httpContext.Request.Headers["Idempotency-Key"]
                     .FirstOrDefault();
