@@ -62,6 +62,12 @@ var actionActivate =
         output);
 
 
+var actionDisable =
+    new ActionDisableCommand(
+        database,
+        output);
+
+
 var dispatcher =
     new CommandDispatcher(
         migrations,
@@ -69,6 +75,7 @@ var dispatcher =
         actionPublish,
         actionList,
         actionActivate,
+        actionDisable,
         output);
 
 
