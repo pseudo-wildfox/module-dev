@@ -43,11 +43,18 @@ var actionValidate =
         output);
 
 
+var actionPublish =
+    new ActionPublishCommand(
+        database,
+        validator,
+        output);
+
 
 var dispatcher =
     new CommandDispatcher(
         migrations,
         actionValidate,
+        actionPublish,
         output);
 
 

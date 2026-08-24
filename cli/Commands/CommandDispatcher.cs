@@ -7,16 +7,19 @@ public sealed class CommandDispatcher
 {
     private readonly MigrationService _migrations;
     private readonly ActionValidateCommand _actionValidate;
+    private readonly ActionPublishCommand _actionPublish;
     private readonly CliOutput _output;
 
 
     public CommandDispatcher(
         MigrationService migrations,
         ActionValidateCommand actionValidate,
+        ActionPublishCommand actionPublish,
         CliOutput output)
     {
         _migrations = migrations;
         _actionValidate = actionValidate;
+        _actionPublish = actionPublish;
         _output = output;
     }
 
@@ -48,6 +51,12 @@ public sealed class CommandDispatcher
                 cancellationToken);
         }
 
+        if (IsCommand(args, "action", "publish"))
+        {
+            return await ExecuteActionPublishAsync(
+                args,
+                cancellationToken);
+        }
 
         return _output.Error(
             "request.invalid",
@@ -92,6 +101,22 @@ public sealed class CommandDispatcher
             cancellationToken);
     }
 
+
+    private async Task<int> ExecuteActionPublishAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: action publish <manifest>");
+        }
+
+        return await _actionPublish.ExecuteAsync(
+            args[2],
+            cancellationToken);
+    }
 
 
     private static bool IsCommand(
