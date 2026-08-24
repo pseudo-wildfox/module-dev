@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 exec docker compose run --rm -T cli "$@"
