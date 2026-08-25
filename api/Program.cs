@@ -328,18 +328,40 @@ app.MapPost(
                 requestId,
                 deadline);
 
-            var responseJson =
-            await executor.ExecuteAsync(
-                manifest,
-                context,
-                payload,
-                cancellationToken);
+            string responseJson;
 
-                    return Results.Content(
-                        responseJson,
-                        "application/json",
-                        Encoding.UTF8,
-                        StatusCodes.Status200OK);
+            try
+            {
+                responseJson = await executor.ExecuteAsync(
+                    manifest,
+                    context,
+                    payload,
+                    cancellationToken);
+            }
+            catch (ActionExecutionException ex)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "action.contract_violation",
+                        message = "action result violates the declared contract.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            return Results.Content(
+                responseJson,
+                "application/json",
+                Encoding.UTF8,
+                StatusCodes.Status200OK);
         }
     })
     .RequireAuthorization();

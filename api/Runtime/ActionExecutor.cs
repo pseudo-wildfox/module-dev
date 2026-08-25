@@ -37,9 +37,12 @@ public sealed class ActionExecutor
         using var contextJson =
             JsonSerializer.SerializeToDocument(context);
 
-        await using var command =
-            new NpgsqlCommand(
-                """
+        try
+        {
+
+            await using var command =
+                new NpgsqlCommand(
+                    """
                 SELECT api.invoke(
                     @module,
                     @action,
@@ -48,71 +51,80 @@ public sealed class ActionExecutor
                     @payload
                 );
                 """,
-                connection,
-                transaction);
+                    connection,
+                    transaction);
 
-        command.Parameters.Add(
-            new NpgsqlParameter("module", NpgsqlDbType.Text)
+            command.Parameters.Add(
+                new NpgsqlParameter("module", NpgsqlDbType.Text)
+                {
+                    Value = manifest.Module
+                });
+
+            command.Parameters.Add(
+                new NpgsqlParameter("action", NpgsqlDbType.Text)
+                {
+                    Value = manifest.Action
+                });
+
+            command.Parameters.Add(
+                new NpgsqlParameter("version", NpgsqlDbType.Integer)
+                {
+                    Value = manifest.Version
+                });
+
+            command.Parameters.Add(
+                new NpgsqlParameter("context", NpgsqlDbType.Jsonb)
+                {
+                    Value = contextJson
+                });
+
+            command.Parameters.Add(
+                new NpgsqlParameter("payload", NpgsqlDbType.Jsonb)
+                {
+                    Value = payload
+                });
+
+
+            var value =
+                await command.ExecuteScalarAsync(
+                    cancellationToken);
+
+            if (value is not string responseJson)
             {
-                Value = manifest.Module
-            });
+                responseJson = value?.ToString()
+                    ?? throw new InvalidOperationException(
+                        "api.invoke returned NULL.");
+            }
 
-        command.Parameters.Add(
-            new NpgsqlParameter("action", NpgsqlDbType.Text)
+            using var response =
+                JsonDocument.Parse(responseJson);
+
+            var validation =
+                _responseValidator.Validate(
+                    manifest,
+                    response.RootElement);
+
+            if (!validation.IsValid)
             {
-                Value = manifest.Action
-            });
+                throw new ActionExecutionException(
+                    validation.ErrorMessage
+                    ?? "action result violates the declared contract.");
+            }
 
-        command.Parameters.Add(
-            new NpgsqlParameter("version", NpgsqlDbType.Integer)
-            {
-                Value = manifest.Version
-            });
+            var result =
+                response.RootElement.Clone();
 
-        command.Parameters.Add(
-            new NpgsqlParameter("context", NpgsqlDbType.Jsonb)
-            {
-                Value = contextJson
-            });
-
-        command.Parameters.Add(
-            new NpgsqlParameter("payload", NpgsqlDbType.Jsonb)
-            {
-                Value = payload
-            });
-
-
-        var value =
-            await command.ExecuteScalarAsync(
+            await transaction.CommitAsync(
                 cancellationToken);
 
-        if (value is not string responseJson)
-        {
-            responseJson = value?.ToString()
-                ?? throw new InvalidOperationException(
-                    "api.invoke returned NULL.");
+            return result.GetRawText();
         }
-
-        using var response =
-            JsonDocument.Parse(responseJson);
-
-        var validation =
-            _responseValidator.Validate(
-                manifest,
-                response.RootElement);
-
-        if (!validation.IsValid)
+        catch
         {
-            throw new InvalidOperationException(
-                validation.ErrorMessage);
+            await transaction.RollbackAsync(
+                CancellationToken.None);
+
+            throw;
         }
-
-        var result =
-            response.RootElement.Clone();
-
-        await transaction.CommitAsync(
-            cancellationToken);
-
-        return result.GetRawText();
     }
 }
