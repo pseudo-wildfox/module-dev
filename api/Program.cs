@@ -28,10 +28,15 @@ builder.Services.AddSingleton(
 builder.Services.AddSingleton<DbConnectionFactory>();
 builder.Services.AddScoped<IActionRepository, ActionRepository>();
 builder.Services.AddScoped<ActionVersionResolver>();
+
 builder.Services.AddSingleton<PolicyEvaluator>();
 builder.Services.AddSingleton<JwtContextFactory>();
+
 builder.Services.AddSingleton<RequestBodyReader>();
 builder.Services.AddSingleton<ActionRequestValidator>();
+builder.Services.AddSingleton<ActionResponseValidator>();
+
+builder.Services.AddScoped<ActionExecutor>();
 
 var issuer =
     GetRequiredEnvironmentVariable("COURSE_JWT_ISSUER");
@@ -123,6 +128,7 @@ app.MapPost(
         JwtContextFactory contextFactory,
         RequestBodyReader requestBodyReader,
         ActionRequestValidator requestValidator,
+        ActionExecutor executor,
         CancellationToken cancellationToken) =>
     {
         var correlationId = Guid.NewGuid();
@@ -322,25 +328,18 @@ app.MapPost(
                 requestId,
                 deadline);
 
-            return Results.Ok(
-                new
-                {
-                    status = "ok",
-                    result = new
-                    {
-                        module = manifest.Module,
-                        action = manifest.Action,
-                        version = manifest.Version,
-                        principal = context.Principal,
-                        consumer = context.Consumer,
-                        scopes = context.Scopes
-                    },
-                    meta = new
-                    {
-                        correlationId = context.CorrelationId,
-                        actionVersion = manifest.Version
-                    }
-                });
+            var responseJson =
+            await executor.ExecuteAsync(
+                manifest,
+                context,
+                payload,
+                cancellationToken);
+
+                    return Results.Content(
+                        responseJson,
+                        "application/json",
+                        Encoding.UTF8,
+                        StatusCodes.Status200OK);
         }
     })
     .RequireAuthorization();
