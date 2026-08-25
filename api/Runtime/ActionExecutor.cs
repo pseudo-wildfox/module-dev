@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ModuleDev.Api.Database;
 using ModuleDev.Api.Security;
 using ModuleDev.Contracts;
@@ -159,9 +160,9 @@ public sealed class ActionExecutor
                     cancellationToken);
 
             var responseJson =
-                value?.ToString()
-                ?? throw new InvalidOperationException(
-                    "api.invoke returned NULL.");
+    value?.ToString()
+    ?? throw new InvalidOperationException(
+        "api.invoke returned NULL.");
 
             using var response =
                 JsonDocument.Parse(responseJson);
@@ -178,6 +179,22 @@ public sealed class ActionExecutor
                     ?? "action result violates the declared contract.");
             }
 
+            var finalResponse =
+                JsonNode.Parse(responseJson)?.AsObject()
+                ?? throw new ActionExecutionException(
+                    "action result is not a JSON object.");
+
+            finalResponse["meta"] = new JsonObject
+            {
+                ["correlationId"] =
+                    context.CorrelationId.ToString(),
+                ["actionVersion"] =
+                    manifest.Version
+            };
+
+            var finalResponseJson =
+                finalResponse.ToJsonString();
+
             if (scopeKey is not null &&
                 !string.IsNullOrWhiteSpace(idempotencyKey))
             {
@@ -186,17 +203,14 @@ public sealed class ActionExecutor
                     transaction,
                     scopeKey,
                     idempotencyKey,
-                    responseJson,
+                    finalResponseJson,
                     cancellationToken);
             }
-
-            var result =
-                response.RootElement.GetRawText();
 
             await transaction.CommitAsync(
                 cancellationToken);
 
-            return result;
+            return finalResponseJson;
         }
         catch
         {
