@@ -35,6 +35,7 @@ builder.Services.AddSingleton<JwtContextFactory>();
 builder.Services.AddSingleton<RequestBodyReader>();
 builder.Services.AddSingleton<ActionRequestValidator>();
 builder.Services.AddSingleton<ActionResponseValidator>();
+builder.Services.AddSingleton<IdempotencyStore>();
 
 builder.Services.AddScoped<ActionExecutor>();
 
@@ -316,6 +317,26 @@ app.MapPost(
                 httpContext.Request.Headers["Idempotency-Key"]
                     .FirstOrDefault();
 
+            if (manifest.IdempotencyMode == "required" &&
+                string.IsNullOrWhiteSpace(requestId))
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "idempotency.required",
+                        message = "Idempotency-Key header is required.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var deadline =
                 DateTimeOffset.UtcNow.AddMilliseconds(
                     manifest.TimeoutMs);
@@ -336,7 +357,26 @@ app.MapPost(
                     manifest,
                     context,
                     payload,
+                    requestId,
                     cancellationToken);
+            }
+            catch (IdempotencyConflictException)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "idempotency.conflict",
+                        message = "The same Idempotency-Key was used with a different payload.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status409Conflict);
             }
             catch (ActionExecutionException ex)
             {
