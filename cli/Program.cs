@@ -43,11 +43,39 @@ var actionValidate =
         output);
 
 
+var actionPublish =
+    new ActionPublishCommand(
+        database,
+        validator,
+        output);
+
+
+var actionList =
+    new ActionListCommand(
+        database,
+        output);
+
+
+var actionActivate =
+    new ActionActivateCommand(
+        database,
+        output);
+
+
+var actionDisable =
+    new ActionDisableCommand(
+        database,
+        output);
+
 
 var dispatcher =
     new CommandDispatcher(
         migrations,
         actionValidate,
+        actionPublish,
+        actionList,
+        actionActivate,
+        actionDisable,
         output);
 
 

@@ -9,9 +9,7 @@ public sealed class CliDatabase
     {
         var host = GetRequiredEnvironmentVariable("DB_HOST");
 
-        var port = GetEnvironmentVariable(
-            "DB_PORT",
-            "5432");
+        var port = GetEnvironmentVariable("DB_PORT", "5432");
 
         var database = GetRequiredEnvironmentVariable("DB_NAME");
 
@@ -32,12 +30,9 @@ public sealed class CliDatabase
             Database = database,
             Username = username,
             Password = password,
-
             ApplicationName = "moduledev-cli",
-
             Timeout = 10,
             CommandTimeout = 30,
-
             Pooling = false
         };
 
@@ -48,6 +43,23 @@ public sealed class CliDatabase
         {
             await connection.OpenAsync(cancellationToken);
 
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<NpgsqlConnection> OpenOwnerConnectionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await OpenConnectionAsync(
+            cancellationToken);
+
+        try
+        {
             await SetOwnerRoleAsync(
                 connection,
                 cancellationToken);

@@ -7,19 +7,29 @@ public sealed class CommandDispatcher
 {
     private readonly MigrationService _migrations;
     private readonly ActionValidateCommand _actionValidate;
+    private readonly ActionPublishCommand _actionPublish;
+    private readonly ActionListCommand _actionList;
+    private readonly ActionActivateCommand _actionActivate;
+    private readonly ActionDisableCommand _actionDisable;
     private readonly CliOutput _output;
-
 
     public CommandDispatcher(
         MigrationService migrations,
         ActionValidateCommand actionValidate,
+        ActionPublishCommand actionPublish,
+        ActionListCommand actionList,
+        ActionActivateCommand actionActivate,
+        ActionDisableCommand actionDisable,
         CliOutput output)
     {
         _migrations = migrations;
         _actionValidate = actionValidate;
+        _actionPublish = actionPublish;
+        _actionList = actionList;
+        _actionActivate = actionActivate;
+        _actionDisable = actionDisable;
         _output = output;
     }
-
 
     public async Task<int> ExecuteAsync(
         string[] args,
@@ -28,10 +38,9 @@ public sealed class CommandDispatcher
         if (args.Length == 0)
         {
             return _output.Error(
-                "request.invalid",
-                "command is required");
+                code: "request.invalid",
+                message: "command is required");
         }
-
 
         if (IsCommand(args, "migration", "apply"))
         {
@@ -40,7 +49,6 @@ public sealed class CommandDispatcher
                 cancellationToken);
         }
 
-
         if (IsCommand(args, "action", "validate"))
         {
             return await ExecuteActionValidateAsync(
@@ -48,13 +56,38 @@ public sealed class CommandDispatcher
                 cancellationToken);
         }
 
+        if (IsCommand(args, "action", "publish"))
+        {
+            return await ExecuteActionPublishAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "action", "list"))
+        {
+            return await ExecuteActionListAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "action", "activate"))
+        {
+            return await ExecuteActionActivateAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "action", "disable"))
+        {
+            return await ExecuteActionDisableAsync(
+                args,
+                cancellationToken);
+        }
 
         return _output.Error(
-            "request.invalid",
-            "unsupported command");
+            code: "request.invalid",
+            message: "unsupported command");
     }
-
-
 
     private async Task<int> ExecuteMigrationApplyAsync(
         string[] args,
@@ -63,17 +96,14 @@ public sealed class CommandDispatcher
         if (args.Length != 3)
         {
             return _output.Error(
-                "request.invalid",
-                "usage: migration apply <directory>");
+                code: "request.invalid",
+                message: "usage: migration apply <directory>");
         }
-
 
         return await _migrations.ApplyAsync(
             args[2],
             cancellationToken);
     }
-
-
 
     private async Task<int> ExecuteActionValidateAsync(
         string[] args,
@@ -82,16 +112,134 @@ public sealed class CommandDispatcher
         if (args.Length != 3)
         {
             return _output.Error(
-                "request.invalid",
-                "usage: action validate <manifest>");
+                code: "request.invalid",
+                message: "usage: action validate <manifest>");
         }
-
 
         return await _actionValidate.ExecuteAsync(
             args[2],
             cancellationToken);
     }
 
+    private async Task<int> ExecuteActionPublishAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: action publish <manifest>");
+        }
+
+        return await _actionPublish.ExecuteAsync(
+            args[2],
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteActionListAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 2)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: action list");
+        }
+
+        return await _actionList.ExecuteAsync(
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteActionActivateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 5 ||
+            !args[3].Equals(
+                "--version",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: action activate <module.action> --version <version>");
+        }
+
+        if (!int.TryParse(
+                args[4],
+                out var version))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "version must be an integer");
+        }
+
+        return await _actionActivate.ExecuteAsync(
+            args[2],
+            version,
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteActionDisableAsync(
+    string[] args,
+    CancellationToken cancellationToken)
+    {
+        if (args.Length is not (5 or 7))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                "usage: action disable <module.action> --version <version> [--replacement-version <version>]");
+        }
+
+        var actionKey = args[2];
+
+        if (!args[3].Equals(
+                "--version",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                "usage: action disable <module.action> --version <version> [--replacement-version <version>]");
+        }
+
+        if (!int.TryParse(args[4], out var version))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "version must be an integer");
+        }
+
+        int? replacementVersion = null;
+
+        if (args.Length > 5)
+        {
+            if (args.Length != 7
+                || !args[5].Equals(
+                    "--replacement-version",
+                    StringComparison.OrdinalIgnoreCase)
+                || !int.TryParse(
+                    args[6],
+                    out var parsedReplacementVersion))
+            {
+                return _output.Error(
+                    code: "request.invalid",
+                    message:
+                    "usage: action disable <module.action> --version <version> [--replacement-version <version>]");
+            }
+
+            replacementVersion = parsedReplacementVersion;
+        }
+
+        return await _actionDisable.ExecuteAsync(
+            actionKey,
+            version,
+            replacementVersion,
+            cancellationToken);
+    }
 
 
     private static bool IsCommand(
