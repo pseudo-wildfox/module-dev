@@ -1,5 +1,5 @@
 -- ============================================================
--- 001-ownership-and-grants.sql
+-- 005-ownership-and-grants.sql
 --
 -- Security configuration for application objects.
 --
@@ -81,6 +81,9 @@ REVOKE ALL
     ON SCHEMA autocheck
     FROM PUBLIC;
 
+REVOKE ALL
+    ON SCHEMA test
+    FROM PUBLIC;
 
 REVOKE ALL
     ON ALL TABLES IN SCHEMA api
@@ -343,3 +346,19 @@ ALTER DEFAULT PRIVILEGES
     FOR ROLE course_owner
     IN SCHEMA payment
     REVOKE ALL ON SEQUENCES FROM PUBLIC;
+
+    
+-- ============================================================
+-- 16. Test infrastructure
+-- ============================================================
+
+
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
+    IN SCHEMA test
+    REVOKE ALL ON TABLES FROM PUBLIC;
+
+ALTER DEFAULT PRIVILEGES
+    FOR ROLE course_owner
+    IN SCHEMA test
+    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
