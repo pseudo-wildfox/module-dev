@@ -484,7 +484,8 @@ app.MapPost(
                     {
                         status = "error",
                         code = "idempotency.conflict",
-                        message = "The same Idempotency-Key was used with a different payload.",
+                        message =
+                            "The same Idempotency-Key was used with a different payload.",
                         retryable = false,
                         details = new { },
                         meta = new
@@ -522,6 +523,24 @@ app.MapPost(
                     },
                     statusCode: statusCode);
             }
+            catch (ActionTimeoutException)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "action.timeout",
+                        message = "Action execution timed out.",
+                        retryable = true,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
             catch (ActionExecutionException)
             {
                 return Results.Json(
@@ -531,6 +550,42 @@ app.MapPost(
                         code = "action.contract_violation",
                         message =
                             "action result violates the declared contract.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+            catch (NpgsqlException)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "dependency.unavailable",
+                        message = "PostgreSQL is unavailable.",
+                        retryable = true,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (Exception)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "internal.error",
+                        message = "An internal error occurred.",
                         retryable = false,
                         details = new { },
                         meta = new
