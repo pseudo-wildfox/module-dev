@@ -23,12 +23,12 @@
 Предметные действия не реализованы отдельными C# контроллерами. Новый action добавляется через manifest и регистрацию PostgreSQL-функции без изменения и пересборки `gateway` и `api`.
 
 Документы архитектуры:
-
-Диаграмма контейнеров:
-
-![C4 Container Diagram](docs/architecture/c4-container.svg)
 - [ADR-001: Trust Boundary](docs/adr/001-trust-boundary.md)
 - [ADR-002: Technical Result and Domain Result](docs/adr/002-technical-vs-domain-result.md)
+
+Диаграмма контейнеров (C4 Container Diagram):
+
+![C4 Container Diagram](docs/architecture/c4-container.svg)
 
 ## Запуск
 
