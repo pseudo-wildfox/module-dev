@@ -10,6 +10,81 @@ app.MapGet(
     "/",
     () => Results.Ok(new { status = "ok" }));
 
+
+app.MapGet(
+    "/health/live",
+    async (
+        HttpContext context,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        CancellationToken cancellationToken) =>
+    {
+        var apiBaseUrl =
+            configuration["API_BASE_URL"]
+            ?? "http://api:8080";
+
+        var client =
+            httpClientFactory.CreateClient();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{apiBaseUrl}/health/live");
+
+        using var response =
+            await client.SendAsync(
+                request,
+                cancellationToken);
+
+        context.Response.StatusCode =
+            (int)response.StatusCode;
+
+        context.Response.ContentType =
+            response.Content.Headers.ContentType?.ToString()
+            ?? "application/json";
+
+        await response.Content.CopyToAsync(
+            context.Response.Body,
+            cancellationToken);
+    });
+
+app.MapGet(
+    "/health/ready",
+    async (
+        HttpContext context,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        CancellationToken cancellationToken) =>
+    {
+        var apiBaseUrl =
+            configuration["API_BASE_URL"]
+            ?? "http://api:8080";
+
+        var client =
+            httpClientFactory.CreateClient();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{apiBaseUrl}/health/ready");
+
+        using var response =
+            await client.SendAsync(
+                request,
+                cancellationToken);
+
+        context.Response.StatusCode =
+            (int)response.StatusCode;
+
+        context.Response.ContentType =
+            response.Content.Headers.ContentType?.ToString()
+            ?? "application/json";
+
+        await response.Content.CopyToAsync(
+            context.Response.Body,
+            cancellationToken);
+    });
+
 app.MapPost(
     "/api/{module}/{action}",
     async (
@@ -131,5 +206,47 @@ app.MapGet(
             context.Response.Body,
             cancellationToken);
     });
+
+
+app.MapGet(
+    "/openapi/default.json",
+    async (
+        HttpContext context,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        CancellationToken cancellationToken) =>
+    {
+        var apiBaseUrl =
+            configuration["API_BASE_URL"]
+            ?? "http://api:8080";
+
+        var client =
+            httpClientFactory.CreateClient();
+
+        var targetUrl =
+            $"{apiBaseUrl}/openapi/default.json";
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Get,
+                targetUrl);
+
+        using var response =
+            await client.SendAsync(
+                request,
+                cancellationToken);
+
+        context.Response.StatusCode =
+            (int)response.StatusCode;
+
+        context.Response.ContentType =
+            response.Content.Headers.ContentType?.ToString()
+            ?? "application/json";
+
+        await response.Content.CopyToAsync(
+            context.Response.Body,
+            cancellationToken);
+    });
+
 
 app.Run();

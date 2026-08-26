@@ -1,3 +1,4 @@
+using ModuleDev.Api.Health;
 using ModuleDev.Api.OpenApi;
 using Npgsql;
 using System.Text.Json;
@@ -82,12 +83,33 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>(
+        "postgres",
+        tags: new[] { "ready" });
+
 var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/", () => "API is running");
+
+app.MapGet(
+    "/health/live",
+    () => Results.Ok(new
+    {
+        status = "ok"
+    }));
+
+app.MapHealthChecks(
+    "/health/ready",
+    new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    {
+        Predicate = check =>
+            check.Tags.Contains("ready")
+    });
+
 
 app.MapGet(
     "/debug/validate-manifest",
@@ -166,6 +188,45 @@ app.MapGet(
         }
 
         var openApiJson = openApiBuilder.Build(manifest);
+
+        return Results.Text(
+            openApiJson,
+            "application/json",
+            Encoding.UTF8,
+            StatusCodes.Status200OK);
+    });
+
+app.MapGet(
+    "/openapi/default.json",
+    async (
+        IActionRepository actionRepository,
+        ManifestOpenApiBuilder openApiBuilder,
+        CancellationToken cancellationToken) =>
+    {
+        IReadOnlyList<ActionManifest> manifests;
+
+        try
+        {
+            manifests =
+                await actionRepository.GetAllDefaultsAsync(
+                    cancellationToken);
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Json(
+                new
+                {
+                    status = "error",
+                    code = "dependency.unavailable",
+                    message = "PostgreSQL is unavailable.",
+                    retryable = true,
+                    details = new { }
+                },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var openApiJson =
+            openApiBuilder.BuildDefault(manifests);
 
         return Results.Text(
             openApiJson,

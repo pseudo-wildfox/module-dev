@@ -7,8 +7,77 @@ public sealed class ManifestOpenApiBuilder
 {
     public string Build(ActionManifest manifest)
     {
-        var path = $"/api/{manifest.Module}/{manifest.Action}";
+        var path =
+            $"/api/{manifest.Module}/{manifest.Action}";
 
+        var document = new
+        {
+            openapi = "3.1.0",
+
+            info = new
+            {
+                title =
+                    $"{manifest.Module}.{manifest.Action} v{manifest.Version}",
+
+                version = $"{manifest.Version}",
+
+                description =
+                    "Machine-generated OpenAPI document from the published action manifest."
+            },
+
+            paths = new Dictionary<string, object>
+            {
+                [path] = new
+                {
+                    post = BuildOperation(manifest)
+                }
+            },
+
+            components = BuildComponents()
+        };
+
+        return Serialize(document);
+    }
+
+    public string BuildDefault(
+        IReadOnlyList<ActionManifest> manifests)
+    {
+        var paths = new Dictionary<string, object>();
+
+        foreach (var manifest in manifests)
+        {
+            var path =
+                $"/api/{manifest.Module}/{manifest.Action}";
+
+            paths[path] = new
+            {
+                post = BuildOperation(manifest)
+            };
+        }
+
+        var document = new
+        {
+            openapi = "3.1.0",
+
+            info = new
+            {
+                title = "ModuleDev Course API",
+                version = "course-1",
+                description =
+                    "Machine-generated OpenAPI document containing enabled default action versions."
+            },
+
+            paths,
+
+            components = BuildComponents()
+        };
+
+        return Serialize(document);
+    }
+
+    private static object BuildOperation(
+        ActionManifest manifest)
+    {
         var parameters = new List<object>
         {
             new
@@ -19,8 +88,7 @@ public sealed class ManifestOpenApiBuilder
                 schema = new
                 {
                     type = "integer",
-                    minimum = 1,
-                    @default = manifest.Version
+                    @const = manifest.Version
                 },
                 description =
                     $"Explicit action version. This document describes version {manifest.Version}."
@@ -70,12 +138,15 @@ public sealed class ManifestOpenApiBuilder
                     type = "string",
                     @const = "ok"
                 },
+
                 outcome = new
                 {
                     type = "string",
                     @enum = manifest.Outcomes.ToArray()
                 },
+
                 result = manifest.ResponseSchema,
+
                 meta = new
                 {
                     type = "object",
@@ -92,6 +163,7 @@ public sealed class ManifestOpenApiBuilder
                             type = "string",
                             format = "uuid"
                         },
+
                         actionVersion = new
                         {
                             type = "integer",
@@ -122,22 +194,27 @@ public sealed class ManifestOpenApiBuilder
                     type = "string",
                     @const = "error"
                 },
+
                 code = new
                 {
                     type = "string"
                 },
+
                 message = new
                 {
                     type = "string"
                 },
+
                 retryable = new
                 {
                     type = "boolean"
                 },
+
                 details = new
                 {
                     type = "object"
                 },
+
                 meta = new
                 {
                     type = "object",
@@ -154,137 +231,117 @@ public sealed class ManifestOpenApiBuilder
                             type = "string",
                             format = "uuid"
                         },
+
                         actionVersion = new
                         {
-                            type = "integer",
-                            minimum = 1,
-                            nullable = true
+                            type = new[] { "integer", "null" },
+                            minimum = 1
                         }
                     }
                 }
             }
         };
 
-        var document = new
+        return new
         {
-            openapi = "3.1.0",
+            operationId =
+                $"{manifest.Module}_{manifest.Action}_v{manifest.Version}",
 
-            info = new
+            summary =
+                $"{manifest.Module}.{manifest.Action} version {manifest.Version}",
+
+            parameters,
+
+            security = new object[]
             {
-                title = $"{manifest.Module}.{manifest.Action} v{manifest.Version}",
-                version = $"{manifest.Version}",
-                description =
-                    "Machine-generated OpenAPI document from the published action manifest."
+                new Dictionary<string, string[]>
+                {
+                    ["bearerAuth"] = Array.Empty<string>()
+                }
             },
 
-            paths = new Dictionary<string, object>
+            requestBody = new
             {
-                [path] = new
+                required = true,
+
+                content = new Dictionary<string, object>
                 {
-                    post = new
+                    ["application/json"] = new
                     {
-                        operationId =
-                            $"{manifest.Module}_{manifest.Action}_v{manifest.Version}",
-
-                        summary =
-                            $"{manifest.Module}.{manifest.Action} version {manifest.Version}",
-
-                        parameters,
-
-                        security = new object[]
-                        {
-                            new Dictionary<string, string[]>
-                            {
-                                ["bearerAuth"] = Array.Empty<string>()
-                            }
-                        },
-
-                        requestBody = new
-                        {
-                            required = true,
-                            content = new Dictionary<string, object>
-                            {
-                                ["application/json"] = new
-                                {
-                                    schema = manifest.RequestSchema
-                                }
-                            }
-                        },
-
-                        responses = new Dictionary<string, object>
-                        {
-                            ["200"] = new
-                            {
-                                description = "Action executed successfully.",
-                                content = new Dictionary<string, object>
-                                {
-                                    ["application/json"] = new
-                                    {
-                                        schema = successSchema
-                                    }
-                                }
-                            },
-
-                            ["400"] = ErrorResponse(
-                                "Invalid request.",
-                                errorSchema),
-
-                            ["401"] = ErrorResponse(
-                                "Authentication failed.",
-                                errorSchema),
-
-                            ["403"] = ErrorResponse(
-                                "Access denied.",
-                                errorSchema),
-
-                            ["404"] = ErrorResponse(
-                                "Action is not available.",
-                                errorSchema),
-
-                            ["409"] = ErrorResponse(
-                                "Idempotency conflict.",
-                                errorSchema),
-
-                            ["422"] = ErrorResponse(
-                                "Payload does not match the declared request schema.",
-                                errorSchema),
-
-                            ["500"] = ErrorResponse(
-                                "Action contract violation or internal error.",
-                                errorSchema),
-
-                            ["503"] = ErrorResponse(
-                                "Dependency is unavailable.",
-                                errorSchema),
-
-                            ["504"] = ErrorResponse(
-                                "Action execution timed out.",
-                                errorSchema)
-                        }
+                        schema = manifest.RequestSchema
                     }
                 }
             },
 
-            components = new
+            responses = new Dictionary<string, object>
             {
-                securitySchemes = new
+                ["200"] = new
                 {
-                    bearerAuth = new
+                    description =
+                        "Action executed successfully.",
+
+                    content = new Dictionary<string, object>
                     {
-                        type = "http",
-                        scheme = "bearer",
-                        bearerFormat = "JWT"
+                        ["application/json"] = new
+                        {
+                            schema = successSchema
+                        }
                     }
+                },
+
+                ["400"] = ErrorResponse(
+                    "Invalid request.",
+                    errorSchema),
+
+                ["401"] = ErrorResponse(
+                    "Authentication failed.",
+                    errorSchema),
+
+                ["403"] = ErrorResponse(
+                    "Access denied.",
+                    errorSchema),
+
+                ["404"] = ErrorResponse(
+                    "Action is not available.",
+                    errorSchema),
+
+                ["409"] = ErrorResponse(
+                    "Idempotency conflict.",
+                    errorSchema),
+
+                ["422"] = ErrorResponse(
+                    "Payload does not match the declared request schema.",
+                    errorSchema),
+
+                ["500"] = ErrorResponse(
+                    "Action contract violation or internal error.",
+                    errorSchema),
+
+                ["503"] = ErrorResponse(
+                    "Dependency is unavailable.",
+                    errorSchema),
+
+                ["504"] = ErrorResponse(
+                    "Action execution timed out.",
+                    errorSchema)
+            }
+        };
+    }
+
+    private static object BuildComponents()
+    {
+        return new
+        {
+            securitySchemes = new
+            {
+                bearerAuth = new
+                {
+                    type = "http",
+                    scheme = "bearer",
+                    bearerFormat = "JWT"
                 }
             }
         };
-
-        return JsonSerializer.Serialize(
-            document,
-            new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
     }
 
     private static object ErrorResponse(
@@ -294,6 +351,7 @@ public sealed class ManifestOpenApiBuilder
         return new
         {
             description,
+
             content = new Dictionary<string, object>
             {
                 ["application/json"] = new
@@ -302,5 +360,15 @@ public sealed class ManifestOpenApiBuilder
                 }
             }
         };
+    }
+
+    private static string Serialize(object document)
+    {
+        return JsonSerializer.Serialize(
+            document,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
     }
 }

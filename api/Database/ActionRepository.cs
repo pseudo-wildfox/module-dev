@@ -22,6 +22,9 @@ public interface IActionRepository
         string action,
         int version,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ActionManifest>> GetAllDefaultsAsync(
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ActionRepository : IActionRepository
@@ -242,5 +245,52 @@ public sealed class ActionRepository : IActionRepository
         }
 
         return ReadManifest(reader);
+    }
+
+
+    public async Task<IReadOnlyList<ActionManifest>> GetAllDefaultsAsync(
+    CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+        SELECT
+            contract_version,
+            module,
+            action,
+            version,
+            http_method,
+            target_schema,
+            target_function,
+            request_schema,
+            response_schema,
+            outcomes,
+            required_policy,
+            idempotency_mode,
+            idempotency_scope,
+            timeout_ms,
+            enabled,
+            is_default
+        FROM runtime.action_definitions
+        WHERE enabled = true
+          AND is_default = true
+        ORDER BY module, action, version;
+        """;
+
+        await using var connection =
+            await _connectionFactory.OpenAsync(cancellationToken);
+
+        await using var command =
+            new NpgsqlCommand(sql, connection);
+
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+
+        var manifests = new List<ActionManifest>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            manifests.Add(ReadManifest(reader));
+        }
+
+        return manifests;
     }
 }
