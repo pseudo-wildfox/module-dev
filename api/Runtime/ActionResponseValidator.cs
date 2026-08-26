@@ -31,13 +31,24 @@ public sealed class ActionResponseValidator
                 "action response status is missing.");
         }
 
+        var statusValue = status.GetString();
+
+        if (string.Equals(
+                statusValue,
+                "error",
+                StringComparison.Ordinal))
+        {
+            return ResponseValidationResult.DomainError(
+                response);
+        }
+
         if (!string.Equals(
-                status.GetString(),
+                statusValue,
                 "ok",
                 StringComparison.Ordinal))
         {
             return ResponseValidationResult.Failure(
-                "action response status is not ok.");
+                "action response status is invalid.");
         }
 
         if (!response.TryGetProperty(
@@ -131,12 +142,30 @@ public sealed class ActionResponseValidator
 
 public sealed record ResponseValidationResult(
     bool IsValid,
-    string? ErrorMessage)
+    bool IsDomainError,
+    string? ErrorMessage,
+    JsonElement? Response)
 {
     public static ResponseValidationResult Success()
-        => new(true, null);
+        => new(
+            true,
+            false,
+            null,
+            null);
 
     public static ResponseValidationResult Failure(
         string message)
-        => new(false, message);
+        => new(
+            false,
+            false,
+            message,
+            null);
+
+    public static ResponseValidationResult DomainError(
+        JsonElement response)
+        => new(
+            false,
+            true,
+            null,
+            response.Clone());
 }

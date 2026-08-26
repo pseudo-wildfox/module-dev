@@ -378,14 +378,42 @@ app.MapPost(
                     },
                     statusCode: StatusCodes.Status409Conflict);
             }
-            catch (ActionExecutionException ex)
+            catch (ActionDomainException ex)
+            {
+                var statusCode =
+                    ex.Code switch
+                    {
+                        "operation.not_found"
+                            => StatusCodes.Status404NotFound,
+
+                        _ => StatusCodes.Status400BadRequest
+                    };
+
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = ex.Code,
+                        message = ex.Message,
+                        retryable = ex.Retryable,
+                        details = ex.Details,
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: statusCode);
+            }
+            catch (ActionExecutionException)
             {
                 return Results.Json(
                     new
                     {
                         status = "error",
                         code = "action.contract_violation",
-                        message = "action result violates the declared contract.",
+                        message =
+                            "action result violates the declared contract.",
                         retryable = false,
                         details = new { },
                         meta = new
