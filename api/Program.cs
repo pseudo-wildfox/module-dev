@@ -1,3 +1,4 @@
+using ModuleDev.Api.OpenApi;
 using Npgsql;
 using System.Text.Json;
 using System.IdentityModel.Tokens.Jwt;
@@ -25,6 +26,7 @@ var schemaJson = await File.ReadAllTextAsync(schemaPath);
 builder.Services.AddSingleton(
     new ActionManifestValidator(schemaJson));
 
+
 builder.Services.AddSingleton<DbConnectionFactory>();
 builder.Services.AddScoped<IActionRepository, ActionRepository>();
 builder.Services.AddScoped<ActionVersionResolver>();
@@ -36,6 +38,7 @@ builder.Services.AddSingleton<RequestBodyReader>();
 builder.Services.AddSingleton<ActionRequestValidator>();
 builder.Services.AddSingleton<ActionResponseValidator>();
 builder.Services.AddSingleton<IdempotencyStore>();
+builder.Services.AddSingleton<ManifestOpenApiBuilder>();
 
 builder.Services.AddScoped<ActionExecutor>();
 
@@ -116,6 +119,59 @@ app.MapGet(
         """;
 
         return validator.Validate(manifestJson);
+    });
+
+app.MapGet(
+    "/openapi/actions/{module}/{action}/{version:int}.json",
+    async (
+        string module,
+        string action,
+        int version,
+        IActionRepository actionRepository,
+        ManifestOpenApiBuilder openApiBuilder,
+        CancellationToken cancellationToken) =>
+    {
+        if (version < 1)
+        {
+            return Results.NotFound();
+        }
+
+        ActionManifest? manifest;
+
+        try
+        {
+            manifest = await actionRepository.GetPublishedAsync(
+                module,
+                action,
+                version,
+                cancellationToken);
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Json(
+                new
+                {
+                    status = "error",
+                    code = "dependency.unavailable",
+                    message = "PostgreSQL is unavailable.",
+                    retryable = true,
+                    details = new { }
+                },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (manifest is null)
+        {
+            return Results.NotFound();
+        }
+
+        var openApiJson = openApiBuilder.Build(manifest);
+
+        return Results.Text(
+            openApiJson,
+            "application/json",
+            Encoding.UTF8,
+            StatusCodes.Status200OK);
     });
 
 app.MapPost(

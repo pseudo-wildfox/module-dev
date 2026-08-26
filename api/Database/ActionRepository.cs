@@ -16,6 +16,12 @@ public interface IActionRepository
         string module,
         string action,
         CancellationToken cancellationToken = default);
+
+    Task<ActionManifest?> GetPublishedAsync(
+        string module,
+        string action,
+        int version,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ActionRepository : IActionRepository
@@ -185,5 +191,56 @@ public sealed class ActionRepository : IActionRepository
                 ?? throw new InvalidOperationException(
                     "Expected string value in action catalog JSON array."))
             .ToArray();
+    }
+
+    public async Task<ActionManifest?> GetPublishedAsync(
+    string module,
+    string action,
+    int version,
+    CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+        SELECT
+            contract_version,
+            module,
+            action,
+            version,
+            http_method,
+            target_schema,
+            target_function,
+            request_schema,
+            response_schema,
+            outcomes,
+            required_policy,
+            idempotency_mode,
+            idempotency_scope,
+            timeout_ms,
+            enabled,
+            is_default
+        FROM runtime.action_definitions
+        WHERE module = @module
+          AND action = @action
+          AND version = @version;
+        """;
+
+        await using var connection =
+            await _connectionFactory.OpenAsync(cancellationToken);
+
+        await using var command =
+            new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("module", module);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("version", version);
+
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return ReadManifest(reader);
     }
 }
