@@ -168,9 +168,48 @@ public sealed class ActionExecutor
                 JsonDocument.Parse(responseJson);
 
             var validation =
-                _responseValidator.Validate(
-                    manifest,
-                    response.RootElement);
+    _responseValidator.Validate(
+        manifest,
+        response.RootElement);
+
+            if (validation.IsDomainError)
+            {
+                var errorResponse = response.RootElement;
+
+                var code =
+                    errorResponse.TryGetProperty(
+                        "code",
+                        out var codeProperty)
+                        ? codeProperty.GetString()
+                        : null;
+
+                var message =
+                    errorResponse.TryGetProperty(
+                        "message",
+                        out var messageProperty)
+                        ? messageProperty.GetString()
+                        : null;
+
+                var retryable =
+                    errorResponse.TryGetProperty(
+                        "retryable",
+                        out var retryableProperty) &&
+                    retryableProperty.ValueKind == JsonValueKind.True;
+
+                var details =
+                    errorResponse.TryGetProperty(
+                        "details",
+                        out var detailsProperty)
+                        ? detailsProperty
+                        : JsonSerializer.SerializeToElement(
+                            new { });
+
+                throw new ActionDomainException(
+                    code ?? "internal.error",
+                    message ?? "action returned a domain error.",
+                    retryable,
+                    details);
+            }
 
             if (!validation.IsValid)
             {
