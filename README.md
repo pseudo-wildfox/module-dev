@@ -24,7 +24,9 @@
 
 Документы архитектуры:
 
-- [C4 Container diagram](docs/architecture/c4-container.puml)
+Диаграмма контейнеров:
+
+![C4 Container Diagram](docs/architecture/c4-container.svg)
 - [ADR-001: Trust Boundary](docs/adr/001-trust-boundary.md)
 - [ADR-002: Technical Result and Domain Result](docs/adr/002-technical-vs-domain-result.md)
 

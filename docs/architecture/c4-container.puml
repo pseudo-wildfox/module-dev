@@ -4,30 +4,29 @@
 
 title ModuleDev Week 1 - Database First Action Runtime
 
-Person(client, "External Client", "Calls published actions using HTTP")
+Person(client, "External Client", "Calls published actions over HTTP using JWT authentication")
 
 System_Boundary(system, "ModuleDev Runtime") {
 
-    Container(gateway, "Gateway", "ASP.NET Core", 
-        "Public HTTP entrypoint.\nValidates routing boundary.\nForwards requests to internal API.\nNo business logic.")
+    Container(gateway, "Gateway", "ASP.NET Core", "Public HTTP entrypoint. Routes external requests to the Action Runtime API.")
 
-    Container(api, "Action Runtime API", "ASP.NET Core",
-        "Generic action executor.\nJWT validation.\nManifest resolution.\nSchema validation.\nTransaction orchestration.")
+    Container(api, "Action Runtime API", "ASP.NET Core", "Generic action execution runtime. Validates JWT, resolves action manifests, validates request and response contracts, creates transaction boundary and invokes PostgreSQL actions.")
 
-    Container(cli, "Course CLI", ".NET Console",
-        "Publication and migration commands.\nPublishes action manifests.")
+    Container(cli, "Course CLI", ".NET Console", "Administrative tool. Runs migrations, validates manifests and publishes or changes action definitions.")
 
-    ContainerDb(postgres, "PostgreSQL", "PostgreSQL",
-        "Authoritative runtime state.\nAction catalog.\nIdempotency.\nOperations.\nEvents.")
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL", "Authoritative application database. Stores action catalog, runtime state, idempotency records, payment state and database action functions.")
 }
 
-Rel(client, gateway, "POST /api/{module}/{action}")
-Rel(gateway, api, "HTTP over Compose DNS")
-Rel(api, postgres, "Npgsql transaction")
-Rel(cli, postgres, "Publication and migrations")
+System_Ext(jwt, "JWT Issuer", "External identity provider that issues signed JWT tokens.")
 
-System_Ext(jwt, "JWT Issuer", "Provides signed JWT tokens")
+Rel(client, gateway, "HTTPS")
 
-Rel(client, jwt, "Obtains token")
+Rel(gateway, api, "Internal HTTP")
+
+Rel(api, postgres, "Npgsql / SQL / api.invoke()")
+
+Rel(cli, postgres, "SQL migrations and manifest publication")
+
+Rel(client, jwt, "Obtains JWT token")
 
 @enduml
