@@ -1,10 +1,12 @@
 services:
   postgres:
     image: postgres:17
+    env_file:
+      - .env
     environment:
       POSTGRES_DB: course
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
@@ -14,6 +16,7 @@ services:
       timeout: 5s
       retries: 10
 
+
   api:
     build:
       context: .
@@ -22,12 +25,12 @@ services:
       ASPNETCORE_URLS: http://+:8080
       COURSE_JWT_ISSUER: moduledev-course
       COURSE_JWT_AUDIENCE: moduledev-api
-      COURSE_JWT_SIGNING_KEY: development-development-development-development
+      COURSE_JWT_SIGNING_KEY: ${COURSE_JWT_SIGNING_KEY}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: course
       DB_USER: course_runtime
-      DB_PASSWORD: course-runtime-dev
+      DB_PASSWORD: ${COURSE_RUNTIME_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,7 +60,7 @@ services:
       DB_PORT: 5432
       DB_NAME: course
       DB_USER: course_migrator
-      DB_PASSWORD: course-migrator-dev
+      DB_PASSWORD: ${COURSE_MIGRATOR_PASSWORD}
     volumes:
       - ./db/migrations:/migrations:ro
     depends_on:
