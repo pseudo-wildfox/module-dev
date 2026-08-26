@@ -31,6 +31,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      cli:
+        condition: service_completed_successfully
 
   gateway:
     build:
@@ -49,6 +51,7 @@ services:
     build:
       context: .
       dockerfile: cli/Dockerfile
+    command: ["migration", "apply", "/migrations"]
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
