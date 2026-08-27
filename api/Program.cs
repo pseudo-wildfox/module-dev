@@ -79,6 +79,36 @@ builder.Services
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                context.Response.StatusCode =
+                    StatusCodes.Status401Unauthorized;
+
+                context.Response.ContentType =
+                    "application/json";
+
+                await context.Response.WriteAsJsonAsync(
+                    new
+                    {
+                        status = "error",
+                        code = "auth.invalid",
+                        message = "JWT is invalid.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId =
+                                context.HttpContext.TraceIdentifier,
+                            actionVersion = (int?)null
+                        }
+                    });
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
