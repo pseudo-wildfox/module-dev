@@ -1,0 +1,32 @@
+@startuml C4 Container Diagram
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title ModuleDev Week 1 - Database First Action Runtime
+
+Person(client, "External Client", "Calls published actions over HTTP using JWT authentication")
+
+System_Boundary(system, "ModuleDev Runtime") {
+
+    Container(gateway, "Gateway", "ASP.NET Core", "Public HTTP entrypoint. Routes external requests to the Action Runtime API.")
+
+    Container(api, "Action Runtime API", "ASP.NET Core", "Generic action execution runtime. Validates JWT, resolves action manifests, validates request and response contracts, creates transaction boundary and invokes PostgreSQL actions.")
+
+    Container(cli, "Course CLI", ".NET Console", "Administrative tool. Runs migrations, validates manifests and publishes or changes action definitions.")
+
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL", "Authoritative application database. Stores action catalog, runtime state, idempotency records, payment state and database action functions.")
+}
+
+System_Ext(jwt, "JWT Issuer", "External identity provider that issues signed JWT tokens.")
+
+Rel(client, gateway, "HTTPS")
+
+Rel(gateway, api, "Internal HTTP")
+
+Rel(api, postgres, "Npgsql / SQL / api.invoke()")
+
+Rel(cli, postgres, "SQL migrations and manifest publication")
+
+Rel(client, jwt, "Obtains JWT token")
+
+@enduml

@@ -204,6 +204,10 @@ REVOKE ALL
     FROM course_runtime;
 
 
+REVOKE CREATE
+    ON SCHEMA api, runtime, payment, autocheck, test
+    FROM course_runtime;
+
 -- ============================================================
 -- 9. Runtime: catalog mutation
 -- ============================================================

@@ -1,3 +1,5 @@
+using ModuleDev.Api.Health;
+using ModuleDev.Api.OpenApi;
 using Npgsql;
 using System.Text.Json;
 using System.IdentityModel.Tokens.Jwt;
@@ -25,6 +27,7 @@ var schemaJson = await File.ReadAllTextAsync(schemaPath);
 builder.Services.AddSingleton(
     new ActionManifestValidator(schemaJson));
 
+
 builder.Services.AddSingleton<DbConnectionFactory>();
 builder.Services.AddScoped<IActionRepository, ActionRepository>();
 builder.Services.AddScoped<ActionVersionResolver>();
@@ -36,6 +39,7 @@ builder.Services.AddSingleton<RequestBodyReader>();
 builder.Services.AddSingleton<ActionRequestValidator>();
 builder.Services.AddSingleton<ActionResponseValidator>();
 builder.Services.AddSingleton<IdempotencyStore>();
+builder.Services.AddSingleton<ManifestOpenApiBuilder>();
 
 builder.Services.AddScoped<ActionExecutor>();
 
@@ -79,6 +83,11 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>(
+        "postgres",
+        tags: new[] { "ready" });
+
 var app = builder.Build();
 
 app.UseAuthentication();
@@ -87,35 +96,111 @@ app.UseAuthorization();
 app.MapGet("/", () => "API is running");
 
 app.MapGet(
-    "/debug/validate-manifest",
-    async (ActionManifestValidator validator) =>
+    "/health/live",
+    () => Results.Ok(new
     {
-        var manifestJson = """
-        {
-          "contract_version": "course-1",
-          "module": "test",
-          "action": "echo",
-          "version": 1,
-          "http_method": "POST",
-          "target_schema": "test",
-          "target_function": "echo_v1",
-          "request_schema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema"
-          },
-          "response_schema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema"
-          },
-          "outcomes": ["OK"],
-          "required_policy": [],
-          "idempotency_mode": "none",
-          "idempotency_scope": "none",
-          "timeout_ms": 5000,
-          "enabled": false,
-          "is_default": false
-        }
-        """;
+        status = "ok"
+    }));
 
-        return validator.Validate(manifestJson);
+app.MapHealthChecks(
+    "/health/ready",
+    new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    {
+        Predicate = check =>
+            check.Tags.Contains("ready")
+    });
+
+
+app.MapGet(
+    "/openapi/actions/{module}/{action}/{version:int}.json",
+    async (
+        string module,
+        string action,
+        int version,
+        IActionRepository actionRepository,
+        ManifestOpenApiBuilder openApiBuilder,
+        CancellationToken cancellationToken) =>
+    {
+        if (version < 1)
+        {
+            return Results.NotFound();
+        }
+
+        ActionManifest? manifest;
+
+        try
+        {
+            manifest = await actionRepository.GetPublishedAsync(
+                module,
+                action,
+                version,
+                cancellationToken);
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Json(
+                new
+                {
+                    status = "error",
+                    code = "dependency.unavailable",
+                    message = "PostgreSQL is unavailable.",
+                    retryable = true,
+                    details = new { }
+                },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (manifest is null)
+        {
+            return Results.NotFound();
+        }
+
+        var openApiJson = openApiBuilder.Build(manifest);
+
+        return Results.Text(
+            openApiJson,
+            "application/json",
+            Encoding.UTF8,
+            StatusCodes.Status200OK);
+    });
+
+app.MapGet(
+    "/openapi/default.json",
+    async (
+        IActionRepository actionRepository,
+        ManifestOpenApiBuilder openApiBuilder,
+        CancellationToken cancellationToken) =>
+    {
+        IReadOnlyList<ActionManifest> manifests;
+
+        try
+        {
+            manifests =
+                await actionRepository.GetAllDefaultsAsync(
+                    cancellationToken);
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Json(
+                new
+                {
+                    status = "error",
+                    code = "dependency.unavailable",
+                    message = "PostgreSQL is unavailable.",
+                    retryable = true,
+                    details = new { }
+                },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var openApiJson =
+            openApiBuilder.BuildDefault(manifests);
+
+        return Results.Text(
+            openApiJson,
+            "application/json",
+            Encoding.UTF8,
+            StatusCodes.Status200OK);
     });
 
 app.MapPost(
@@ -367,7 +452,8 @@ app.MapPost(
                     {
                         status = "error",
                         code = "idempotency.conflict",
-                        message = "The same Idempotency-Key was used with a different payload.",
+                        message =
+                            "The same Idempotency-Key was used with a different payload.",
                         retryable = false,
                         details = new { },
                         meta = new
@@ -405,6 +491,24 @@ app.MapPost(
                     },
                     statusCode: statusCode);
             }
+            catch (ActionTimeoutException)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "action.timeout",
+                        message = "Action execution timed out.",
+                        retryable = true,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
             catch (ActionExecutionException)
             {
                 return Results.Json(
@@ -414,6 +518,42 @@ app.MapPost(
                         code = "action.contract_violation",
                         message =
                             "action result violates the declared contract.",
+                        retryable = false,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+            catch (NpgsqlException)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "dependency.unavailable",
+                        message = "PostgreSQL is unavailable.",
+                        retryable = true,
+                        details = new { },
+                        meta = new
+                        {
+                            correlationId,
+                            actionVersion = manifest.Version
+                        }
+                    },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (Exception)
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "error",
+                        code = "internal.error",
+                        message = "An internal error occurred.",
                         retryable = false,
                         details = new { },
                         meta = new

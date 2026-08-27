@@ -17,7 +17,7 @@ public sealed class ActionExecutor
     public ActionExecutor(
         DbConnectionFactory connectionFactory,
         ActionResponseValidator responseValidator,
-    IdempotencyStore idempotencyStore)
+        IdempotencyStore idempotencyStore)
     {
         _connectionFactory = connectionFactory;
         _responseValidator = responseValidator;
@@ -31,21 +31,40 @@ public sealed class ActionExecutor
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
-        await using var connection =
-            await _connectionFactory.OpenAsync(
+        using var timeoutCts =
+            CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken);
 
-        await using var transaction =
-            await connection.BeginTransactionAsync(
-                cancellationToken);
+        var remaining =
+            context.Deadline - DateTimeOffset.UtcNow;
 
-        using var contextJson =
-            JsonSerializer.SerializeToDocument(context);
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new ActionTimeoutException();
+        }
 
-        string? scopeKey = null;
+        timeoutCts.CancelAfter(remaining);
+
+        var executionToken =
+            timeoutCts.Token;
+
+        NpgsqlTransaction? transaction = null;
 
         try
         {
+            await using var connection =
+                await _connectionFactory.OpenAsync(
+                    executionToken);
+
+            transaction =
+                await connection.BeginTransactionAsync(
+                    executionToken);
+
+            using var contextJson =
+                JsonSerializer.SerializeToDocument(context);
+
+            string? scopeKey = null;
+
             if (manifest.IdempotencyMode == "required" &&
                 string.IsNullOrWhiteSpace(idempotencyKey))
             {
@@ -75,7 +94,7 @@ public sealed class ActionExecutor
                         scopeKey,
                         idempotencyKey,
                         payloadHash,
-                        cancellationToken);
+                        executionToken);
 
                 switch (reservation.Kind)
                 {
@@ -86,7 +105,7 @@ public sealed class ActionExecutor
                     case IdempotencyReservationKind.Replay:
 
                         await transaction.CommitAsync(
-                            cancellationToken);
+                            executionToken);
 
                         return reservation.ResponseJson
                             ?? throw new InvalidOperationException(
@@ -104,14 +123,14 @@ public sealed class ActionExecutor
             await using var command =
                 new NpgsqlCommand(
                     """
-                SELECT api.invoke(
-                    @module,
-                    @action,
-                    @version,
-                    @context,
-                    @payload
-                );
-                """,
+                    SELECT api.invoke(
+                        @module,
+                        @action,
+                        @version,
+                        @context,
+                        @payload
+                    );
+                    """,
                     connection,
                     transaction);
 
@@ -155,26 +174,42 @@ public sealed class ActionExecutor
                     Value = payload
                 });
 
+            var remainingForCommand =
+                context.Deadline - DateTimeOffset.UtcNow;
+
+            if (remainingForCommand <= TimeSpan.Zero)
+            {
+                throw new ActionTimeoutException();
+            }
+
+            command.CommandTimeout =
+                Math.Clamp(
+                    (int)Math.Ceiling(
+                        remainingForCommand.TotalSeconds),
+                    1,
+                    30);
+
             var value =
                 await command.ExecuteScalarAsync(
-                    cancellationToken);
+                    executionToken);
 
             var responseJson =
-    value?.ToString()
-    ?? throw new InvalidOperationException(
-        "api.invoke returned NULL.");
+                value?.ToString()
+                ?? throw new InvalidOperationException(
+                    "api.invoke returned NULL.");
 
             using var response =
                 JsonDocument.Parse(responseJson);
 
             var validation =
-    _responseValidator.Validate(
-        manifest,
-        response.RootElement);
+                _responseValidator.Validate(
+                    manifest,
+                    response.RootElement);
 
             if (validation.IsDomainError)
             {
-                var errorResponse = response.RootElement;
+                var errorResponse =
+                    response.RootElement;
 
                 var code =
                     errorResponse.TryGetProperty(
@@ -194,7 +229,8 @@ public sealed class ActionExecutor
                     errorResponse.TryGetProperty(
                         "retryable",
                         out var retryableProperty) &&
-                    retryableProperty.ValueKind == JsonValueKind.True;
+                    retryableProperty.ValueKind ==
+                        JsonValueKind.True;
 
                 var details =
                     errorResponse.TryGetProperty(
@@ -227,6 +263,7 @@ public sealed class ActionExecutor
             {
                 ["correlationId"] =
                     context.CorrelationId.ToString(),
+
                 ["actionVersion"] =
                     manifest.Version
             };
@@ -243,20 +280,44 @@ public sealed class ActionExecutor
                     scopeKey,
                     idempotencyKey,
                     finalResponseJson,
-                    cancellationToken);
+                    executionToken);
             }
 
             await transaction.CommitAsync(
-                cancellationToken);
+                executionToken);
 
             return finalResponseJson;
         }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested &&
+                  timeoutCts.IsCancellationRequested)
+        {
+            throw new ActionTimeoutException();
+        }
         catch
         {
-            await transaction.RollbackAsync(
-                CancellationToken.None);
+            if (transaction is not null)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    // The original exception is more important
+                    // than a rollback failure.
+                }
+            }
 
             throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
         }
     }
 }
