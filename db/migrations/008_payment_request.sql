@@ -1,5 +1,5 @@
 -- ============================================================
--- Week 1 — payment.request v1
+-- Week 1 â€” payment.request v1
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION payment.request_v1(

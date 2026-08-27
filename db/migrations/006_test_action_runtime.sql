@@ -1,5 +1,5 @@
 -- ============================================================
--- Week 1 — first generic action runtime target
+-- Week 1 â€” first generic action runtime target
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS test
