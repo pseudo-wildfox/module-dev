@@ -1,8 +1,6 @@
-# ModuleDev Week 1 - Database First Action Runtime
-
 ## Решение
 
-## Архитектура
+### Архитектура
 
 Проект реализует database-first action runtime, который публикует PostgreSQL-функции как HTTP actions через generic C# runtime.
 
@@ -30,9 +28,9 @@
 
 ![C4 Container Diagram](docs/architecture/c4-container.svg)
 
-## Запуск
+### Запуск
 
-### Prerequisites
+#### Prerequisites
 
 Для запуска необходимы:
 
@@ -76,53 +74,57 @@ docker compose ps
 ./check.sh
 ```
 
-## Конфигурация
 
-Конфигурация передаётся через `.env`.
+### Конфигурация
 
-В репозитории находится только пример:
+Конфигурация передаётся через файл `.env`.
+
+В репозитории хранится только пример конфигурации:
 
 ```text
 .env.example
 ```
 
+Перед запуском необходимо создать собственный `.env` файл на основе примера.
+
 Реальные секреты не хранятся в Git.
 
 Используемые переменные:
 
-```text
-POSTGRES_PASSWORD
-```
+| Переменная                  | Назначение                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`         | Пароль PostgreSQL superuser для инициализации базы данных `course`            |
+| `COURSE_MIGRATOR_PASSWORD`  | Пароль роли миграций `course_migrator`                                        |
+| `COURSE_PUBLISHER_PASSWORD` | Пароль роли публикации action manifests                                       |
+| `COURSE_RUNTIME_PASSWORD`   | Пароль runtime-роли `course_runtime`, используемой API для выполнения actions |
+| `COURSE_JWT_SIGNING_KEY`    | Секрет подписи JWT HS256. Должен содержать не менее 32 байт                   |
+| `COURSE_JWT_ISSUER`         | Значение issuer для проверки JWT. Используется `moduledev-course`             |
+| `COURSE_JWT_AUDIENCE`       | Значение audience для проверки JWT. Используется `moduledev-api`              |
 
-Пароль PostgreSQL superuser.
+Дополнительные настройки API задаются через `compose.yaml`.
 
-```text
-COURSE_MIGRATOR_PASSWORD
-```
+API получает:
 
-Пароль роли миграций.
+| Переменная        | Значение         |
+| ----------------- | ---------------- |
+| `ASPNETCORE_URLS` | `http://+:8080`  |
+| `DB_HOST`         | `postgres`       |
+| `DB_PORT`         | `5432`           |
+| `DB_NAME`         | `course`         |
+| `DB_USER`         | `course_runtime` |
 
-```text
-COURSE_PUBLISHER_PASSWORD
-```
+Gateway получает:
 
-Пароль роли публикации actions.
+| Переменная        | Значение          |
+| ----------------- | ----------------- |
+| `ASPNETCORE_URLS` | `http://+:8080`   |
+| `API_BASE_URL`    | `http://api:8080` |
 
-```text
-COURSE_RUNTIME_PASSWORD
-```
+CLI получает отдельные credentials миграционной роли и не использует runtime-доступ API к базе данных.
 
-Пароль runtime-роли API.
 
-```text
-COURSE_JWT_SIGNING_KEY
-```
 
-Секрет подписи JWT HS256.
-
-Дополнительные настройки API задаются через Compose:
-
-## Миграции
+### Миграции
 
 Миграции хранятся в:
 
@@ -163,7 +165,7 @@ docker compose run --rm cli migration apply /migrations
 
 API runtime не использует migration credentials.
 
-## Проверка
+### Проверка
 
 Основная проверка проекта:
 
@@ -216,7 +218,7 @@ CLI команды:
 ```
 
 
-## Диагностика
+### Диагностика
 
 Статус сервисов:
 
@@ -283,7 +285,7 @@ GET /openapi/actions/{module}/{action}/{version}.json
 
 OpenAPI документы строятся на основе опубликованных manifest.
 
-## Ограничения
+### Ограничения
 
 В текущей реализации поддерживается только функциональность первой недели задания.
 
