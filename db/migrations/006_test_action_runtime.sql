@@ -1,5 +1,5 @@
 -- ============================================================
--- Week 1 — first generic action runtime target
+-- Week 1 â€” first generic action runtime target
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS test
@@ -94,8 +94,13 @@ BEGIN
 
 
     IF v_missing_policy IS NOT NULL THEN
-        RAISE EXCEPTION
-            'required policy is missing';
+        RETURN jsonb_build_object(
+            'status', 'error',
+            'code', 'access.denied',
+            'message', 'Required policy is missing.',
+            'retryable', false,
+            'details', jsonb_build_object()
+        );
     END IF;
 
 

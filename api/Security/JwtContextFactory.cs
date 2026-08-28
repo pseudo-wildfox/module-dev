@@ -9,7 +9,7 @@ public sealed class JwtContextFactory
     {
         var sub = GetRequiredClaim(principal, "sub");
         var consumer = GetRequiredClaim(principal, "consumer");
-        var scope = GetRequiredClaim(principal, "scope");
+        var scope = GetOptionalClaim(principal, "scope");
 
         var scopes = scope
             .Split(
@@ -39,6 +39,12 @@ public sealed class JwtContextFactory
         }
 
         return claim.Value;
+    }
+    private static string GetOptionalClaim(
+    ClaimsPrincipal principal,
+    string name)
+    {
+        return principal.FindFirst(name)?.Value ?? string.Empty;
     }
 }
 

@@ -1,5 +1,5 @@
 -- ============================================================
--- Week 1 — rollback probe
+-- Week 1 â€” rollback probe
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS test.rollback_canary
