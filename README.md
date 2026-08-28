@@ -21,6 +21,7 @@
 Предметные действия не реализованы отдельными C# контроллерами. Новый action добавляется через manifest и регистрацию PostgreSQL-функции без изменения и пересборки `gateway` и `api`.
 
 Документы архитектуры:
+
 - [ADR-001: Trust Boundary](docs/adr/001-trust-boundary.md)
 - [ADR-002: Technical Result and Domain Result](docs/adr/002-technical-vs-domain-result.md)
 
@@ -53,14 +54,14 @@ docker compose up -d --build
 
 После успешного запуска:
 
-* `gateway` доступен по адресу:
+- `gateway` доступен по адресу:
 
 ```text
 http://localhost:8080
 ```
 
-* PostgreSQL работает во внутренней сети Compose;
-* сервисы `api`, `cli` и `postgres` не публикуют host-порты.
+- PostgreSQL работает во внутренней сети Compose;
+- сервисы `api`, `cli` и `postgres` не публикуют host-порты.
 
 Проверить состояние контейнеров:
 
@@ -73,7 +74,6 @@ docker compose ps
 ```bash
 ./check.sh
 ```
-
 
 ### Конфигурация
 
@@ -122,8 +122,6 @@ Gateway получает:
 
 CLI получает отдельные credentials миграционной роли и не использует runtime-доступ API к базе данных.
 
-
-
 ### Миграции
 
 Миграции хранятся в:
@@ -158,32 +156,34 @@ docker compose run --rm cli migration apply /migrations
 
 Правила миграций:
 
-* SQL-файлы выполняются в лексикографическом порядке;
-* каждый migration file выполняется в отдельной транзакции;
-* повторное применение неизменённой миграции является безопасным;
-* изменение уже применённой миграции определяется через checksum и приводит к ошибке.
+- SQL-файлы выполняются в лексикографическом порядке;
+- каждый migration file выполняется в отдельной транзакции;
+- повторное применение неизменённой миграции является безопасным;
+- изменение уже применённой миграции определяется через checksum и приводит к ошибке.
 
 API runtime не использует migration credentials.
 
 ### Проверка
 
-Основная проверка проекта:
+Основная автоматическая проверка решения выполняется нормативным black-box checker:
 
-```bash
-./check.sh
-```
+| Среда              | Команда       | Результат                                                                                                                                |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Unix/Linux/macOS   | `./check.sh`  | Запускает нормативный black-box checker. После завершения в корне проекта создаётся `week-1-public-report.json` с результатами проверки. |
+| Windows PowerShell | `.\check.ps1` | Запускает тот же нормативный black-box checker и создаёт тот же `week-1-public-report.json`.                                             |
 
-Проверка выполняет:
+Оба скрипта запускают один и тот же `autocheck/public_check.py`; различается только способ запуска в зависимости от операционной системы.
 
-* сборку Compose;
-* запуск сервисов;
-* публикацию и активацию actions;
-* проверку JWT и policy;
-* проверку request и response schemas;
-* проверку idempotency;
-* проверку PostgreSQL permissions;
-* проверку health endpoints;
-* проверку OpenAPI документов.
+Проверка использует собственные тестовые JWT и fixtures и является основным критерием корректности реализации.
+
+Для ручной проверки database-first publication можно использовать демонстрационный action `test.echo`, расположенный в `contracts/example/test-echo-v1.action.json`.
+
+| Команды                                                                                                                                                                                                    | Ожидаемый результат                                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Unix/Linux/macOS**<br>`./course.sh action validate /app/contracts/example/test-echo-v1.action.json`<br><br>**Windows**<br>`.\course.cmd action validate /app/contracts/example/test-echo-v1.action.json` | `json { "status": "ok", "result": { "resource": "action", "operation": "validated" }, "meta": { "contractVersion": "course-1" } } `                                                                                               |
+| **Unix/Linux/macOS**<br>`./course.sh action publish /app/contracts/example/test-echo-v1.action.json`<br><br>**Windows**<br>`.\course.cmd action publish /app/contracts/example/test-echo-v1.action.json`   | `json { "status": "ok", "result": { "resource": "action", "operation": "published", "key": "test.echo", "version": 1 }, "meta": { "contractVersion": "course-1" } } `                                                             |
+| **Unix/Linux/macOS**<br>`./course.sh action activate test.echo --version 1`<br><br>**Windows**<br>`.\course.cmd action activate test.echo --version 1`                                                     | `json { "status": "ok", "result": { "resource": "action", "operation": "activated", "key": "test.echo", "version": 1 }, "meta": { "contractVersion": "course-1" } } `                                                             |
+| **Unix/Linux/macOS**<br>`./course.sh action list`<br><br>**Windows**<br>`.\course.cmd action list`                                                                                                         | `json { "status": "ok", "result": { "resource": "actions", "count": 3, "items": [ ... { "module": "test", "action": "echo", "version": 1, "enabled": true, "isDefault": true } ] }, "meta": { "contractVersion": "course-1" } } ` |
 
 CLI команды:
 
@@ -216,7 +216,6 @@ CLI команды:
 ```bash
 ./course.sh action disable <module.action> --version <version> [--replacement-version <version>]
 ```
-
 
 ### Диагностика
 
@@ -266,8 +265,8 @@ GET /health/ready
 
 Readiness считается успешным только если:
 
-* PostgreSQL доступен;
-* завершена инициализация runtime.
+- PostgreSQL доступен;
+- завершена инициализация runtime.
 
 OpenAPI:
 
@@ -291,24 +290,22 @@ OpenAPI документы строятся на основе опубликов
 
 Не реализованы:
 
-* workflow engine;
-* process instances;
-* worker execution;
-* provider simulator;
-* retries;
-* outbox/inbox;
-* manual actions;
-* failpoints и сложные механизмы восстановления.
+- workflow engine;
+- process instances;
+- worker execution;
+- provider simulator;
+- retries;
+- outbox/inbox;
+- manual actions;
+- failpoints и сложные механизмы восстановления.
 
 Технические решения:
 
-* PostgreSQL является источником авторитетного состояния;
-* action execution выполняется через manifest-driven runtime;
-* предметная логика находится в PostgreSQL-функциях;
-* C# API отвечает за инфраструктурные проверки и выполнение контракта;
-* gateway не содержит бизнес-логики и доступа к базе данных;
-* publication и runtime используют разные database roles.
+- PostgreSQL является источником авторитетного состояния;
+- action execution выполняется через manifest-driven runtime;
+- предметная логика находится в PostgreSQL-функциях;
+- C# API отвечает за инфраструктурные проверки и выполнение контракта;
+- gateway не содержит бизнес-логики и доступа к базе данных;
+- publication и runtime используют разные database roles.
 
-
-- [TASK.md](docs/TASK.md)
-
+* [TASK.md](docs/TASK.md)
