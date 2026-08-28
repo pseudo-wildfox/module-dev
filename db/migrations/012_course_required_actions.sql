@@ -105,7 +105,7 @@ VALUES
     ),
 
     jsonb_build_array(
-        'payment:create'
+        'payment:write'
     ),
 
     'required',
