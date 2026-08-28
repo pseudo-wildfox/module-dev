@@ -84,8 +84,14 @@ public sealed class ActionResponseValidator
 
         try
         {
+            var buildOptions = new BuildOptions
+            {
+                SchemaRegistry = new SchemaRegistry()
+            };
+
             schema = JsonSchema.FromText(
-                manifest.ResponseSchema.GetRawText());
+                manifest.ResponseSchema.GetRawText(),
+                buildOptions);
         }
         catch (Exception ex)
         {
