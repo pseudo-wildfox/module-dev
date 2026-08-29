@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using Api.Tests.Helpers;
 
 namespace Api.Tests;
 
@@ -15,6 +16,8 @@ public abstract class ApiTestBase : IAsyncLifetime
 
     protected HttpClient Client { get; private set; } = null!;
 
+    protected AutocheckRepository Autocheck { get; private set; } = null!;
+
     protected ApiTestBase(
         ApiTestFixture fixture)
     {
@@ -25,6 +28,10 @@ public abstract class ApiTestBase : IAsyncLifetime
     {
         Client =
             Fixture.Factory.CreateClient();
+
+        Autocheck =
+            new AutocheckRepository(
+                Postgres.ConnectionString);
 
         return Task.CompletedTask;
     }
