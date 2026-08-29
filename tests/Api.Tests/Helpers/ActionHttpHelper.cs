@@ -171,4 +171,33 @@ public static class ActionHttpHelper
 
         return request;
     }
+
+    public static HttpRequestMessage CreateGenericRequest(
+        string path,
+        object payload,
+        string token,
+        string? idempotencyKey = null)
+    {
+        var request =
+            new HttpRequestMessage(
+                HttpMethod.Post,
+                path);
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            request.Headers.Add(
+                "Idempotency-Key",
+                idempotencyKey);
+        }
+
+        request.Content =
+            JsonContent.Create(payload);
+
+        return request;
+    }
 }
