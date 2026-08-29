@@ -619,3 +619,8 @@ static string GetRequiredEnvironmentVariable(
 
     return value;
 }
+
+
+public partial class Program
+{
+}
