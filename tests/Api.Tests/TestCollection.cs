@@ -1,9 +1,9 @@
 namespace Api.Tests;
 
 [CollectionDefinition(
-    "PostgreSQL collection",
+    "API collection",
     DisableParallelization = true)]
-public sealed class PostgreSqlCollection
-    : ICollectionFixture<PostgreSqlFixture>
+public sealed class ApiCollection
+    : ICollectionFixture<ApiTestFixture>
 {
 }

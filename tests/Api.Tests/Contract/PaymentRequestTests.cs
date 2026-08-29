@@ -8,8 +8,8 @@ public sealed class PaymentRequestTests
     : ApiTestBase
 {
     public PaymentRequestTests(
-        PostgreSqlFixture postgres)
-        : base(postgres)
+        ApiTestFixture fixture)
+        : base(fixture)
     {
     }
 

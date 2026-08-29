@@ -2,38 +2,38 @@ using System.Net.Http.Headers;
 
 namespace Api.Tests;
 
-[Collection("PostgreSQL collection")]
+[Collection("API collection")]
 public abstract class ApiTestBase : IAsyncLifetime
 {
-    protected PostgreSqlFixture Postgres { get; }
+    protected ApiTestFixture Fixture { get; }
 
-    protected TestApplicationFactory Factory { get; private set; } = null!;
+    protected PostgreSqlFixture Postgres =>
+        Fixture.Postgres;
+
+    protected TestApplicationFactory Factory =>
+        Fixture.Factory;
 
     protected HttpClient Client { get; private set; } = null!;
 
     protected ApiTestBase(
-        PostgreSqlFixture postgres)
+        ApiTestFixture fixture)
     {
-        Postgres = postgres;
+        Fixture = fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await Postgres.ResetStateAsync();
-
-        Factory =
-            new TestApplicationFactory(
-                Postgres);
-
         Client =
-            Factory.CreateClient();
+            Fixture.Factory.CreateClient();
+
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
         Client.Dispose();
 
-        await Factory.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     protected void SetBearerToken(
