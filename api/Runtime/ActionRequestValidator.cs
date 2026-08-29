@@ -1,5 +1,5 @@
-using Json.Schema;
 using System.Text.Json;
+using Json.Schema;
 
 namespace ModuleDev.Api.Runtime;
 
@@ -15,8 +15,14 @@ public sealed class ActionRequestValidator
         JsonElement schema,
         JsonElement payload)
     {
+        var buildOptions = new BuildOptions
+        {
+            SchemaRegistry = new SchemaRegistry()
+        };
+
         var jsonSchema = JsonSchema.FromText(
-            schema.GetRawText());
+            schema.GetRawText(),
+            buildOptions);
 
         var result = jsonSchema.Evaluate(
             payload,

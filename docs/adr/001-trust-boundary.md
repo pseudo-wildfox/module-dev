@@ -6,20 +6,26 @@ Accepted
 
 ## Контекст
 
-Система публикует PostgreSQL-функции как HTTP actions.
+Система публикует зарегистрированные PostgreSQL-функции как HTTP actions.
 
-Основной риск:
-клиент может попытаться повлиять на внутреннюю маршрутизацию,
-предметную политику или контекст выполнения.
+Клиент взаимодействует только с публичным gateway и может выбирать опубликованный action, передавая payload и, при необходимости, explicit version.
 
-Клиент не должен выбирать:
+Основной риск заключается в том, что недоверенный клиентский ввод может быть использован для изменения внутренней маршрутизации, предметной политики или server-side context.
+
+Поэтому клиент не должен иметь возможности выбирать или подменять:
 
 - PostgreSQL database;
-- schema;
-- function;
+- PostgreSQL schema;
+- target function;
 - SQL;
-- policy;
-- финальный результат.
+- required policy;
+- principal;
+- consumer;
+- scopes;
+- correlationId;
+- requestId;
+- deadline;
+- финальный предметный результат.
 
 ## Решение
 
@@ -27,72 +33,101 @@ Trust boundary разделяется на несколько уровней.
 
 ### HTTP Gateway
 
-Gateway является внешней границей.
+Gateway является внешней границей системы.
 
-Его ответственность:
+Он:
 
-- принимать только разрешённые маршруты;
-- скрывать внутренний API;
-- не содержать catalog;
-- не иметь доступа к PostgreSQL.
+- принимает только разрешённые HTTP routes;
+- публикует единственный внешний host port;
+- передаёт запрос во внутренний API через Compose DNS;
+- не имеет доступа к PostgreSQL;
+- не содержит action catalog и предметной логики.
 
-Gateway не доверяет клиентскому запросу.
+Gateway не рассматривает данные клиентского запроса как доверенные и не принимает решений о target function или database operation.
 
 ### Action Runtime API
 
-API формирует доверенный runtime context после проверки JWT.
+API является границей аутентификации и формирования доверенного runtime context.
 
-В context входят:
+После успешной проверки JWT API извлекает из проверенных claims:
 
-- principal;
-- consumer;
-- scopes;
-- correlationId;
-- requestId;
-- deadline.
+- `principal`;
+- `consumer`;
+- `scopes`.
 
-Эти значения никогда не берутся из payload.
+API самостоятельно формирует:
 
-### Action Catalog
+- `correlationId`;
+- `requestId`;
+- `deadline`.
 
-Target функция выбирается только из опубликованного manifest.
+Эти server-side значения не могут быть подменены полями HTTP payload.
 
-Клиент передает:
+Payload рассматривается как недоверенный вход и проверяется против request schema опубликованного action.
 
-- module;
-- action;
-- optional version.
+### Immutable Action Catalog
 
-Клиент не передает:
+Action resolution выполняется только по опубликованному catalog.
 
-- target_schema;
-- target_function.
+Клиент может передать:
 
-### PostgreSQL api.invoke
+- `module`;
+- `action`;
+- optional `X-Action-Version`.
 
-Все предметные вызовы проходят через:
+Клиент не может передать:
 
-api.invoke(...)
+- `target_schema`;
+- `target_function`;
+- SQL;
+- required policy;
+- request/response schema;
+- idempotency configuration.
 
-Функция повторно проверяет:
+Target и остальные параметры исполнения берутся из immutable опубликованной версии manifest.
 
-- существование action;
-- enabled status;
-- version;
-- policy.
+Операционное состояние `enabled` и `is_default` изменяется только через publication CLI и атомарные database operations.
+
+### PostgreSQL `api.invoke`
+
+Все предметные вызовы проходят через единую функцию `api.invoke`, которая является второй доверенной границей после HTTP API.
+
+Она повторно проверяет:
+
+- существование action в catalog;
+- выбранную version;
+- `enabled` status;
+- required policy;
+- допустимый target из catalog;
+- точную target function signature.
+
+Target function вызывается только после успешного прохождения этих проверок.
+
+Runtime database role получает право на выполнение `api.invoke`, но не получает прямого DML-доступа к предметным таблицам.
+
+### Subject State
+
+Предметные изменения выполняются только зарегистрированными PostgreSQL-функциями внутри транзакционной границы action execution.
+
+Клиент не может перескочить напрямую к предметной таблице или произвольной PostgreSQL-функции.
 
 ## Последствия
 
-Положительные:
+### Положительные
 
-- новый action добавляется через publication flow;
-- API не требует пересборки;
-- невозможно вызвать произвольную SQL-функцию.
+- новый action может быть опубликован без изменения и пересборки C# API;
+- routing и target function контролируются immutable catalog;
+- policy проверяется на HTTP boundary и повторно в `api.invoke`;
+- server-side context не может быть подменён payload;
+- runtime role не получает прямого доступа к предметному DML;
+- database остаётся authoritative source для catalog и subject state.
 
-Отрицательные:
+### Отрицательные
 
-- требуется поддерживать catalog;
-- publication становится отдельным жизненным циклом.
+- необходимо поддерживать action catalog;
+- publication становится отдельным жизненным циклом;
+- требуется синхронизация контрактов между manifest, JSON Schema и PostgreSQL target functions;
+- часть security checks намеренно выполняется дважды на разных границах.
 
 ## Альтернативы
 
@@ -100,16 +135,22 @@ api.invoke(...)
 
 Отклонено.
 
-Причина:
+Новый action потребовал бы изменения C# кода и пересборки API. Это нарушает database-first и generic runtime model.
 
-- новый action потребовал бы изменения кода;
-- нарушается database-first подход.
-
-### Клиент передает имя функции
+### Клиент передаёт target function
 
 Отклонено.
 
-Причина:
+Это позволило бы недоверенному клиенту выбирать внутренний PostgreSQL object и нарушило бы trust boundary.
 
-- нарушает trust boundary;
-- позволяет выбирать внутренние объекты базы.
+### Прямой DML из C# runtime
+
+Отклонено.
+
+Это перенесло бы предметную логику и authoritative mutations из PostgreSQL в API и нарушило бы database-first execution model.
+
+### Одна policy check только на HTTP boundary
+
+Отклонено.
+
+`api.invoke` является отдельной доверенной границей и должен самостоятельно проверять required policy, чтобы прямой вызов database runtime role не мог обойти authorization.

@@ -13,40 +13,11 @@ app.MapGet(
 
 app.MapGet(
     "/health/live",
-    async (
-        HttpContext context,
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
-        CancellationToken cancellationToken) =>
+    () => Results.Ok(new
     {
-        var apiBaseUrl =
-            configuration["API_BASE_URL"]
-            ?? "http://api:8080";
+        status = "ok"
+    }));
 
-        var client =
-            httpClientFactory.CreateClient();
-
-        using var request =
-            new HttpRequestMessage(
-                HttpMethod.Get,
-                $"{apiBaseUrl}/health/live");
-
-        using var response =
-            await client.SendAsync(
-                request,
-                cancellationToken);
-
-        context.Response.StatusCode =
-            (int)response.StatusCode;
-
-        context.Response.ContentType =
-            response.Content.Headers.ContentType?.ToString()
-            ?? "application/json";
-
-        await response.Content.CopyToAsync(
-            context.Response.Body,
-            cancellationToken);
-    });
 
 app.MapGet(
     "/health/ready",

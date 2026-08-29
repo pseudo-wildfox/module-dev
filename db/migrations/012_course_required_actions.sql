@@ -46,7 +46,9 @@ VALUES
 
     '{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:course:course-1:payment-request-payload",
         "type": "object",
+        "additionalProperties": false,
         "required": [
             "operationKind",
             "amount",
@@ -54,58 +56,74 @@ VALUES
         ],
         "properties": {
             "operationKind": {
-                "type": "string",
-                "minLength": 1
+                "enum": [
+                    "PAYMENT_EXECUTION",
+                    "PAYMENT_APPROVAL"
+                ]
             },
             "amount": {
-                "type": "number"
+                "type": "string",
+                "pattern": "^(?:0\\.0[1-9]|0\\.[1-9][0-9]?|[1-9][0-9]{0,15}(?:\\.[0-9]{1,2})?)$"
             },
             "currency": {
-                "type": "string",
-                "minLength": 3,
-                "maxLength": 3
-            }
-        },
-        "additionalProperties": false
-    }'::jsonb,
-
-
-    '{
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "required": [
-            "status",
-            "outcome",
-            "result"
-        ],
-        "properties": {
-            "status": {
-                "const": "ok"
-            },
-            "outcome": {
-                "const": "CREATED"
-            },
-            "result": {
-                "type": "object",
-                "required": [
-                    "operationId",
-                    "requestId",
-                    "operationKind",
-                    "amount",
-                    "currency",
-                    "status"
-                ]
+                "const": "RUB"
             }
         }
     }'::jsonb,
 
+    '{
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:course:course-1:operation-result",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "operationId",
+            "requestId",
+            "operationKind",
+            "amount",
+            "currency",
+            "status"
+        ],
+        "properties": {
+            "operationId": {
+                "type": "string",
+                "format": "uuid"
+            },
+            "requestId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+            },
+            "operationKind": {
+                "enum": [
+                    "PAYMENT_EXECUTION",
+                    "PAYMENT_APPROVAL"
+                ]
+            },
+            "amount": {
+                "type": "string",
+                "pattern": "^(?:0\\.0[1-9]|0\\.[1-9][0-9]?|[1-9][0-9]{0,15}(?:\\.[0-9]{1,2})?)$"
+            },
+            "currency": {
+                "const": "RUB"
+            },
+            "status": {
+                "enum": [
+                    "CREATED",
+                    "PROCESSING",
+                    "COMPLETED",
+                    "REJECTED"
+                ]
+            }
+        }
+    }'::jsonb,
 
     jsonb_build_array(
         'CREATED'
     ),
 
     jsonb_build_array(
-        'payment:create'
+        'payment:write'
     ),
 
     'required',
@@ -139,7 +157,6 @@ DO UPDATE SET
 
     timeout_ms = EXCLUDED.timeout_ms,
     contract_version = EXCLUDED.contract_version;
-
 
 
 INSERT INTO runtime.action_definitions
@@ -184,10 +201,11 @@ VALUES
     'payment',
     'operation_get_v1',
 
-
     '{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:course:course-1:operation-get-payload",
         "type": "object",
+        "additionalProperties": false,
         "required": [
             "operationId"
         ],
@@ -196,21 +214,55 @@ VALUES
                 "type": "string",
                 "format": "uuid"
             }
-        },
-        "additionalProperties": false
+        }
     }'::jsonb,
-
 
     '{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:course:course-1:operation-result",
         "type": "object",
+        "additionalProperties": false,
         "required": [
-            "status",
-            "outcome",
-            "result"
-        ]
+            "operationId",
+            "requestId",
+            "operationKind",
+            "amount",
+            "currency",
+            "status"
+        ],
+        "properties": {
+            "operationId": {
+                "type": "string",
+                "format": "uuid"
+            },
+            "requestId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+            },
+            "operationKind": {
+                "enum": [
+                    "PAYMENT_EXECUTION",
+                    "PAYMENT_APPROVAL"
+                ]
+            },
+            "amount": {
+                "type": "string",
+                "pattern": "^(?:0\\.0[1-9]|0\\.[1-9][0-9]?|[1-9][0-9]{0,15}(?:\\.[0-9]{1,2})?)$"
+            },
+            "currency": {
+                "const": "RUB"
+            },
+            "status": {
+                "enum": [
+                    "CREATED",
+                    "PROCESSING",
+                    "COMPLETED",
+                    "REJECTED"
+                ]
+            }
+        }
     }'::jsonb,
-
 
     jsonb_build_array(
         'FOUND'
@@ -219,7 +271,6 @@ VALUES
     jsonb_build_array(
         'payment:read'
     ),
-
 
     'none',
     'none',
@@ -234,7 +285,6 @@ VALUES
 
 ON CONFLICT (module, action, version)
 DO UPDATE SET
-
     enabled = EXCLUDED.enabled,
     is_default = EXCLUDED.is_default,
 

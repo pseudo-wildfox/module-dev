@@ -1,0 +1,44 @@
+{
+  "contract_version": "course-1",
+  "module": "test",
+  "action": "echo",
+  "version": 1,
+  "http_method": "POST",
+  "target_schema": "test",
+  "target_function": "echo_v1",
+  "request_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["value"],
+    "properties": {
+      "value": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    }
+  },
+  "response_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["echo", "principal"],
+    "properties": {
+      "echo": {
+        "type": "object"
+      },
+      "principal": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "outcomes": ["OK"],
+  "required_policy": [],
+  "idempotency_mode": "required",
+  "idempotency_scope": "principal_action",
+  "timeout_ms": 5000,
+  "enabled": false,
+  "is_default": false
+}
