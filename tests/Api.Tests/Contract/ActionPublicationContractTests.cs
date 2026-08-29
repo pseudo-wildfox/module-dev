@@ -11,10 +11,6 @@ public sealed class ActionPublicationContractTests
         : base(fixture)
     {
     }
-    private CliActionHelper Cli =>
-        new(
-            FindRepositoryRoot(),
-            Postgres.ConnectionString);
 
 
     [Fact]

@@ -8,13 +8,20 @@ public sealed class CliActionHelper
 {
     private readonly string _repositoryRoot;
     private readonly string _connectionString;
+    private readonly Lazy<Task<string>> _cliDllPath;
 
     public CliActionHelper(
-        string repositoryRoot,
         string connectionString)
     {
-        _repositoryRoot = repositoryRoot;
-        _connectionString = connectionString;
+        _repositoryRoot =
+            FindRepositoryRoot();
+
+        _connectionString =
+            connectionString;
+
+        _cliDllPath =
+            new Lazy<Task<string>>(
+                BuildCliAsync);
     }
 
     public async Task<CliResult> PublishAsync(
@@ -22,11 +29,9 @@ public sealed class CliActionHelper
         CancellationToken cancellationToken = default)
     {
         return await RunAsync(
-            [
-                "action",
-                "publish",
-                manifestPath
-            ],
+            "action",
+            "publish",
+            manifestPath,
             cancellationToken);
     }
 
@@ -36,13 +41,11 @@ public sealed class CliActionHelper
         CancellationToken cancellationToken = default)
     {
         return await RunAsync(
-            [
-                "action",
-                "activate",
-                key,
-                "--version",
-                version.ToString()
-            ],
+            "action",
+            "activate",
+            key,
+            "--version",
+            version.ToString(),
             cancellationToken);
     }
 
@@ -110,10 +113,14 @@ public sealed class CliActionHelper
                     {
                         ["$schema"] =
                             "https://json-schema.org/draft/2020-12/schema",
+
                         ["type"] = "object",
+
                         ["additionalProperties"] = false,
+
                         ["required"] =
                             new JsonArray("value"),
+
                         ["properties"] =
                             new JsonObject
                             {
@@ -132,12 +139,16 @@ public sealed class CliActionHelper
                     {
                         ["$schema"] =
                             "https://json-schema.org/draft/2020-12/schema",
+
                         ["type"] = "object",
+
                         ["additionalProperties"] = false,
+
                         ["required"] =
                             new JsonArray(
                                 "echo",
                                 "principal"),
+
                         ["properties"] =
                             new JsonObject
                             {
@@ -146,6 +157,7 @@ public sealed class CliActionHelper
                                     {
                                         ["type"] = "object"
                                     },
+
                                 ["principal"] =
                                     new JsonObject
                                     {
@@ -162,9 +174,14 @@ public sealed class CliActionHelper
                     new JsonArray(),
 
                 ["idempotency_mode"] = "required",
-                ["idempotency_scope"] = "principal_action",
+
+                ["idempotency_scope"] =
+                    "principal_action",
+
                 ["timeout_ms"] = timeoutMs,
+
                 ["enabled"] = enabled,
+
                 ["is_default"] = isDefault
             };
 
@@ -198,8 +215,7 @@ public sealed class CliActionHelper
         }
         catch
         {
-            // Test cleanup should not hide the
-            // original assertion failure.
+            // Do not hide the original test failure.
         }
     }
 
@@ -207,7 +223,7 @@ public sealed class CliActionHelper
         string arg1,
         string arg2,
         string arg3,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         return await RunAsync(
             new[] { arg1, arg2, arg3 },
@@ -215,16 +231,106 @@ public sealed class CliActionHelper
     }
 
     private async Task<CliResult> RunAsync(
-        params string[] arguments)
+        string arg1,
+        string arg2,
+        string arg3,
+        string arg4,
+        string arg5,
+        CancellationToken cancellationToken)
     {
         return await RunAsync(
-            arguments,
-            CancellationToken.None);
+            new[] { arg1, arg2, arg3, arg4, arg5 },
+            cancellationToken);
     }
 
     private async Task<CliResult> RunAsync(
         string[] arguments,
         CancellationToken cancellationToken)
+    {
+        var cliDll =
+            await _cliDllPath.Value;
+
+        var startInfo =
+            new ProcessStartInfo
+            {
+                FileName =
+                    OperatingSystem.IsWindows()
+                        ? "dotnet.exe"
+                        : "dotnet",
+
+                WorkingDirectory =
+                    _repositoryRoot,
+
+                UseShellExecute = false,
+
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+
+                CreateNoWindow = true
+            };
+
+        startInfo.ArgumentList.Add(cliDll);
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        startInfo.Environment["ConnectionStrings__Database"] =
+            _connectionString;
+
+        using var process =
+            new Process
+            {
+                StartInfo = startInfo
+            };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException(
+                "Failed to start CLI process.");
+        }
+
+        var stdoutTask =
+            process.StandardOutput.ReadToEndAsync(
+                cancellationToken);
+
+        var stderrTask =
+            process.StandardError.ReadToEndAsync(
+                cancellationToken);
+
+        await process.WaitForExitAsync(
+            cancellationToken);
+
+        var stdout =
+            await stdoutTask;
+
+        var stderr =
+            await stderrTask;
+
+        JsonDocument? document = null;
+
+        if (!string.IsNullOrWhiteSpace(stdout))
+        {
+            try
+            {
+                document =
+                    JsonDocument.Parse(stdout);
+            }
+            catch (JsonException)
+            {
+                // Caller receives raw stdout/stderr.
+            }
+        }
+
+        return new CliResult(
+            process.ExitCode,
+            stdout,
+            stderr,
+            document);
+    }
+
+    private async Task<string> BuildCliAsync()
     {
         var cliProject =
             Path.Combine(
@@ -258,18 +364,11 @@ public sealed class CliActionHelper
                 CreateNoWindow = true
             };
 
-        startInfo.ArgumentList.Add("run");
-        startInfo.ArgumentList.Add("--project");
+        startInfo.ArgumentList.Add("build");
         startInfo.ArgumentList.Add(cliProject);
-        startInfo.ArgumentList.Add("--");
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        startInfo.Environment["ConnectionStrings__Database"] =
-            _connectionString;
+        startInfo.ArgumentList.Add("--no-restore");
+        startInfo.ArgumentList.Add("--configuration");
+        startInfo.ArgumentList.Add("Debug");
 
         using var process =
             new Process
@@ -280,7 +379,7 @@ public sealed class CliActionHelper
         if (!process.Start())
         {
             throw new InvalidOperationException(
-                "Failed to start CLI.");
+                "Failed to build CLI.");
         }
 
         var stdoutTask =
@@ -289,8 +388,7 @@ public sealed class CliActionHelper
         var stderrTask =
             process.StandardError.ReadToEndAsync();
 
-        await process.WaitForExitAsync(
-            cancellationToken);
+        await process.WaitForExitAsync();
 
         var stdout =
             await stdoutTask;
@@ -298,27 +396,63 @@ public sealed class CliActionHelper
         var stderr =
             await stderrTask;
 
-        JsonDocument? document = null;
-
-        if (!string.IsNullOrWhiteSpace(stdout))
+        if (process.ExitCode != 0)
         {
-            try
-            {
-                document =
-                    JsonDocument.Parse(stdout);
-            }
-            catch (JsonException)
-            {
-                // The caller can inspect raw stdout.
-            }
+            throw new InvalidOperationException(
+                "CLI build failed." +
+                Environment.NewLine +
+                $"Exit code: {process.ExitCode}" +
+                Environment.NewLine +
+                $"STDOUT:{Environment.NewLine}{stdout}" +
+                Environment.NewLine +
+                $"STDERR:{Environment.NewLine}{stderr}");
         }
 
-        return new CliResult(
-            process.ExitCode,
-            stdout,
-            stderr,
-            document);
+        var configurationDirectory =
+            Path.Combine(
+                _repositoryRoot,
+                "cli",
+                "bin",
+                "Debug",
+                "net10.0");
+
+        var cliDll =
+            Path.Combine(
+                configurationDirectory,
+                "Cli.dll");
+
+        if (!File.Exists(cliDll))
+        {
+            throw new FileNotFoundException(
+                "CLI assembly was not produced.",
+                cliDll);
+        }
+
+        return cliDll;
     }
+
+    private static string FindRepositoryRoot()
+{
+    var directory =
+        new DirectoryInfo(
+            AppContext.BaseDirectory);
+
+    while (directory is not null)
+    {
+        if (File.Exists(
+                Path.Combine(
+                    directory.FullName,
+                    "ModuleDev.slnx")))
+        {
+            return directory.FullName;
+        }
+
+        directory = directory.Parent;
+    }
+
+    throw new DirectoryNotFoundException(
+        "Could not find repository root containing ModuleDev.slnx.");
+}
 }
 
 public sealed record CliResult(

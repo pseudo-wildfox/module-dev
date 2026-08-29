@@ -18,6 +18,9 @@ public abstract class ApiTestBase : IAsyncLifetime
 
     protected AutocheckRepository Autocheck { get; private set; } = null!;
 
+    protected CliActionHelper Cli =>
+        Fixture.Cli;
+
     protected ApiTestBase(
         ApiTestFixture fixture)
     {

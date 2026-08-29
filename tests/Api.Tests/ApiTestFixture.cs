@@ -1,4 +1,7 @@
+using Api.Tests.Helpers;
+
 namespace Api.Tests;
+
 
 public sealed class ApiTestFixture : IAsyncLifetime
 {
@@ -7,9 +10,16 @@ public sealed class ApiTestFixture : IAsyncLifetime
 
     public TestApplicationFactory Factory { get; private set; } = null!;
 
+    public CliActionHelper Cli { get; private set; } = null!;
+
+
     public async Task InitializeAsync()
     {
         await Postgres.InitializeAsync();
+
+        Cli =
+            new CliActionHelper(
+                Postgres.ConnectionString);
 
         Factory =
             new TestApplicationFactory(Postgres);
