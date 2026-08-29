@@ -134,4 +134,22 @@ public static class ActionHttpHelper
             1,
             actionVersion.GetInt32());
     }
+
+    public static async Task<IReadOnlyList<HttpResponseMessage>> SendConcurrentAsync(
+        HttpClient client,
+        int count,
+        Func<int, HttpRequestMessage> requestFactory)
+    {
+        var tasks = Enumerable
+            .Range(0, count)
+            .Select(async index =>
+            {
+                using var request = requestFactory(index);
+
+                // Response нужно вернуть, а не dispose'ить внутри.
+                return await client.SendAsync(request);
+            });
+
+        return await Task.WhenAll(tasks);
+    }
 }

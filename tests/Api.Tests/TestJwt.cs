@@ -77,4 +77,12 @@ internal static class TestJwt
         return new JwtSecurityTokenHandler()
             .WriteToken(token);
     }
+
+    public static string CreateAnotherCandidate()
+    {
+        return Create(
+            "another-client",
+            "web",
+            "payment:write payment:read workflow:read");
+    }
 }

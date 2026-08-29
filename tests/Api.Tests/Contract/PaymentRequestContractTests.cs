@@ -528,4 +528,336 @@ public sealed class PaymentRequestContractTests : ApiTestBase
             await Autocheck.CountOperationEventsAsync());
     }
 
+    [Fact]
+    public async Task PaymentRequest_ConcurrentIdenticalRequests_CreateOneOperation()
+    {
+        var key = $"concurrent-{Guid.NewGuid():N}";
+
+        var payload = new
+        {
+            operationKind = "PAYMENT_EXECUTION",
+            amount = "500.00",
+            currency = "RUB"
+        };
+
+        var responses =
+            await ActionHttpHelper.SendConcurrentAsync(
+                Client,
+                20,
+                _ =>
+                    ActionHttpHelper.CreatePaymentRequest(
+                        key,
+                        payload,
+                        TestJwt.CreateCandidate()));
+
+        try
+        {
+            Assert.All(
+                responses,
+                response => Assert.Equal(
+                    HttpStatusCode.OK,
+                    response.StatusCode));
+
+            var operationIds = new HashSet<Guid>();
+
+            foreach (var response in responses)
+            {
+                using var document =
+                    await ActionHttpHelper.ReadJsonAsync(response);
+
+                var operationId =
+                    Guid.Parse(
+                        ActionHttpHelper.GetResultString(
+                            document.RootElement,
+                            "operationId"));
+
+                operationIds.Add(operationId);
+            }
+
+            Assert.Single(operationIds);
+
+            var operations =
+                await Autocheck.GetOperationsAsync();
+
+            var operation =
+                Assert.Single(
+                    operations,
+                    item =>
+                        operationIds.Contains(
+                            item.OperationId));
+
+            Assert.Equal(
+                key,
+                operation.RequestId);
+
+            var events =
+                await Autocheck.GetOperationEventsAsync();
+
+            var createdEvents =
+                events
+                    .Where(e =>
+                        e.OperationId ==
+                        operation.OperationId)
+                    .ToArray();
+
+            Assert.Single(createdEvents);
+
+            Assert.Equal(
+                "OPERATION_CREATED",
+                createdEvents[0].EventType);
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task PaymentRequest_AfterConcurrentExecution_ReplaysOriginalResult()
+    {
+        var key = $"concurrent-replay-{Guid.NewGuid():N}";
+
+        var payload = new
+        {
+            operationKind = "PAYMENT_EXECUTION",
+            amount = "600.00",
+            currency = "RUB"
+        };
+
+        var responses =
+            await ActionHttpHelper.SendConcurrentAsync(
+                Client,
+                20,
+                _ =>
+                    ActionHttpHelper.CreatePaymentRequest(
+                        key,
+                        payload,
+                        TestJwt.CreateCandidate()));
+
+        string operationId;
+
+        try
+        {
+            Assert.All(
+                responses,
+                response => Assert.Equal(
+                    HttpStatusCode.OK,
+                    response.StatusCode));
+
+            using var firstDocument =
+                await ActionHttpHelper.ReadJsonAsync(
+                    responses[0]);
+
+            operationId =
+                ActionHttpHelper.GetResultString(
+                    firstDocument.RootElement,
+                    "operationId");
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        using var replayRequest =
+            ActionHttpHelper.CreatePaymentRequest(
+                key,
+                payload,
+                TestJwt.CreateCandidate());
+
+        using var replayResponse =
+            await Client.SendAsync(
+                replayRequest);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            replayResponse.StatusCode);
+
+        using var replayDocument =
+            await ActionHttpHelper.ReadJsonAsync(
+                replayResponse);
+
+        Assert.Equal(
+            operationId,
+            ActionHttpHelper.GetResultString(
+                replayDocument.RootElement,
+                "operationId"));
+
+        var operations =
+            await Autocheck.GetOperationsAsync();
+
+        Assert.Single(
+            operations,
+            item =>
+                item.OperationId ==
+                Guid.Parse(operationId));
+
+        var events =
+            await Autocheck.GetOperationEventsAsync();
+
+        Assert.Single(
+            events,
+            item =>
+                item.OperationId ==
+                Guid.Parse(operationId) &&
+                item.EventType ==
+                "OPERATION_CREATED");
+    }
+
+
+    [Fact]
+    public async Task PaymentRequest_CompletedKeyWithDifferentPayload_ReturnsConflict()
+    {
+        var key = $"completed-conflict-{Guid.NewGuid():N}";
+
+        var firstPayload = new
+        {
+            operationKind = "PAYMENT_EXECUTION",
+            amount = "100.00",
+            currency = "RUB"
+        };
+
+        using (var firstRequest =
+            ActionHttpHelper.CreatePaymentRequest(
+                key,
+                firstPayload,
+                TestJwt.CreateCandidate()))
+        using (var firstResponse =
+            await Client.SendAsync(firstRequest))
+        {
+            Assert.Equal(
+                HttpStatusCode.OK,
+                firstResponse.StatusCode);
+        }
+
+        var operationsAfterFirst =
+            await Autocheck.CountOperationsAsync();
+
+        var eventsAfterFirst =
+            await Autocheck.CountOperationEventsAsync();
+
+        var differentPayload = new
+        {
+            operationKind = "PAYMENT_EXECUTION",
+            amount = "999.00",
+            currency = "RUB"
+        };
+
+        using var conflictRequest =
+            ActionHttpHelper.CreatePaymentRequest(
+                key,
+                differentPayload,
+                TestJwt.CreateCandidate());
+
+        using var conflictResponse =
+            await Client.SendAsync(
+                conflictRequest);
+
+        using var conflictDocument =
+            await ActionHttpHelper.ReadJsonAsync(
+                conflictResponse);
+
+        ActionHttpHelper.AssertError(
+            conflictResponse,
+            conflictDocument.RootElement,
+            HttpStatusCode.Conflict,
+            "idempotency.conflict");
+
+        Assert.Equal(
+            operationsAfterFirst,
+            await Autocheck.CountOperationsAsync());
+
+        Assert.Equal(
+            eventsAfterFirst,
+            await Autocheck.CountOperationEventsAsync());
+    }
+
+
+    [Fact]
+    public async Task PaymentRequest_SameKeyForDifferentPrincipals_IsIndependent()
+    {
+        var operationsBefore =
+            await Autocheck.CountOperationsAsync();
+
+        var key = $"scope-{Guid.NewGuid():N}";
+
+        var payload = new
+        {
+            operationKind = "PAYMENT_EXECUTION",
+            amount = "300.00",
+            currency = "RUB"
+        };
+
+        using var firstRequest =
+            ActionHttpHelper.CreatePaymentRequest(
+                key,
+                payload,
+                TestJwt.CreateCandidate());
+
+        using var firstResponse =
+            await Client.SendAsync(firstRequest);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            firstResponse.StatusCode);
+
+        using var secondRequest =
+            ActionHttpHelper.CreatePaymentRequest(
+                key,
+                payload,
+                TestJwt.CreateAnotherCandidate());
+
+        using var secondResponse =
+            await Client.SendAsync(secondRequest);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            secondResponse.StatusCode);
+
+        using var firstDocument =
+            await ActionHttpHelper.ReadJsonAsync(
+                firstResponse);
+
+        using var secondDocument =
+            await ActionHttpHelper.ReadJsonAsync(
+                secondResponse);
+
+        var firstOperationId =
+            ActionHttpHelper.GetResultString(
+                firstDocument.RootElement,
+                "operationId");
+
+        var secondOperationId =
+            ActionHttpHelper.GetResultString(
+                secondDocument.RootElement,
+                "operationId");
+
+        Assert.NotEqual(
+            firstOperationId,
+            secondOperationId);
+
+        var operations =
+            await Autocheck.GetOperationsAsync();
+
+        Assert.Equal(
+            operationsBefore + 2,
+            operations.Count);
+
+        Assert.Contains(
+            operations,
+            operation =>
+                operation.OperationId ==
+                Guid.Parse(firstOperationId));
+
+        Assert.Contains(
+            operations,
+            operation =>
+                operation.OperationId ==
+                Guid.Parse(secondOperationId));
+    }
 }
