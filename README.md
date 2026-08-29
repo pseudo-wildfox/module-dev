@@ -159,7 +159,7 @@ API runtime не использует migration credentials.
 | Linux/macOS        | `./check.sh`  | Запускает нормативный black-box checker. После завершения в корне проекта создаётся `week-1-public-report.json` с результатами проверки. |
 | Windows PowerShell | `.\check.ps1` | Альтернативный способ запуска проверки для Windows.                                                                                      |
 
-Оба скрипта запускают один и тот же `autocheck/public_check.py`; различается только способ запуска в зависимости от операционной системы.
+Оба скрипта вызывают один и тот же `autocheck/public_check.py`; различается только способ запуска в зависимости от операционной системы.
 
 Для ручной проверки database-first publication можно использовать демонстрационный action `test.echo`, расположенный в `contracts/example/test-echo-v1.action.json`.
 
