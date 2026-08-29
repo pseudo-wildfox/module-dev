@@ -85,4 +85,12 @@ internal static class TestJwt
             "web",
             "payment:write payment:read workflow:read");
     }
+
+    public static string CreateWorker()
+    {
+        return Create(
+            "workflow-worker",
+            "internal",
+            "workflow:execute payment:internal");
+    }
 }

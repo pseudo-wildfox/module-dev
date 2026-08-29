@@ -432,27 +432,159 @@ public sealed class CliActionHelper
     }
 
     private static string FindRepositoryRoot()
-{
-    var directory =
-        new DirectoryInfo(
-            AppContext.BaseDirectory);
-
-    while (directory is not null)
     {
-        if (File.Exists(
-                Path.Combine(
-                    directory.FullName,
-                    "ModuleDev.slnx")))
+        var directory =
+            new DirectoryInfo(
+                AppContext.BaseDirectory);
+
+        while (directory is not null)
         {
-            return directory.FullName;
+            if (File.Exists(
+                    Path.Combine(
+                        directory.FullName,
+                        "ModuleDev.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
         }
 
-        directory = directory.Parent;
+        throw new DirectoryNotFoundException(
+            "Could not find repository root containing ModuleDev.slnx.");
     }
 
-    throw new DirectoryNotFoundException(
-        "Could not find repository root containing ModuleDev.slnx.");
-}
+    public string CreateRollbackManifestFile(
+        string module,
+        string action,
+        int version = 1)
+    {
+        var directory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "moduledev-api-tests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        var path =
+            Path.Combine(
+                directory,
+                $"{module}-{action}-v{version}.json");
+
+        var manifest =
+            new JsonObject
+            {
+                ["contract_version"] = "course-1",
+                ["module"] = module,
+                ["action"] = action,
+                ["version"] = version,
+                ["http_method"] = "POST",
+
+                ["target_schema"] = "test",
+                ["target_function"] = "echo_rollback_v1",
+
+                ["request_schema"] =
+                    new JsonObject
+                    {
+                        ["$schema"] =
+                            "https://json-schema.org/draft/2020-12/schema",
+
+                        ["type"] = "object",
+
+                        ["additionalProperties"] = false,
+
+                        ["required"] =
+                            new JsonArray("marker"),
+
+                        ["properties"] =
+                            new JsonObject
+                            {
+                                ["marker"] =
+                                    new JsonObject
+                                    {
+                                        ["type"] = "string",
+                                        ["minLength"] = 1,
+                                        ["maxLength"] = 128
+                                    }
+                            }
+                    },
+
+                /*
+                * Deliberately declares a different outcome.
+                *
+                * test.echo_rollback_v1 returns NOT_ALLOWED,
+                * but manifest declares EXPECTED.
+                *
+                * Therefore response validation must reject the
+                * target result and the whole transaction must roll back.
+                */
+                ["response_schema"] =
+                    new JsonObject
+                    {
+                        ["$schema"] =
+                            "https://json-schema.org/draft/2020-12/schema",
+
+                        ["type"] = "object",
+
+                        ["additionalProperties"] = false,
+
+                        ["required"] =
+                            new JsonArray(
+                                "echo",
+                                "principal"),
+
+                        ["properties"] =
+                            new JsonObject
+                            {
+                                ["echo"] =
+                                    new JsonObject
+                                    {
+                                        ["type"] = "object"
+                                    },
+
+                                ["principal"] =
+                                    new JsonObject
+                                    {
+                                        ["type"] = "string",
+                                        ["minLength"] = 1
+                                    }
+                            }
+                    },
+
+                ["outcomes"] =
+                    new JsonArray("EXPECTED"),
+
+                ["required_policy"] =
+                    new JsonArray("workflow:execute"),
+
+                ["idempotency_mode"] =
+                    "required",
+
+                ["idempotency_scope"] =
+                    "principal_action",
+
+                ["timeout_ms"] =
+                    5000,
+
+                ["enabled"] =
+                    true,
+
+                ["is_default"] =
+                    true
+            };
+
+        File.WriteAllText(
+            path,
+            manifest.ToJsonString(
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }));
+
+        return path;
+    }
+
 }
 
 public sealed record CliResult(

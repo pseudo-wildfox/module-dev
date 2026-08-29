@@ -140,6 +140,85 @@ public sealed class AutocheckRepository
 
         return Convert.ToInt32(value);
     }
+
+    public async Task<int> CountRollbackCanaryAsync(
+        string marker,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM test.rollback_canary
+            WHERE marker = @marker;
+            """;
+
+        await using var connection =
+            new NpgsqlConnection(_connectionString);
+
+        await connection.OpenAsync(
+            cancellationToken);
+
+        await using var command =
+            new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue(
+            "marker",
+            marker);
+
+        var value =
+            await command.ExecuteScalarAsync(
+                cancellationToken);
+
+        return Convert.ToInt32(value);
+    }
+
+
+    public async Task<int> CountDispatchesAsync(
+        string module,
+        string action,
+        string? requestId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM autocheck.action_dispatches
+            WHERE module = @module
+            AND action = @action
+            AND (
+                request_id = @request_id
+                OR (
+                    request_id IS NULL
+                    AND @request_id IS NULL
+                )
+            );
+            """;
+
+        await using var connection =
+            new NpgsqlConnection(_connectionString);
+
+        await connection.OpenAsync(
+            cancellationToken);
+
+        await using var command =
+            new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue(
+            "module",
+            module);
+
+        command.Parameters.AddWithValue(
+            "action",
+            action);
+
+        command.Parameters.AddWithValue(
+            "request_id",
+            (object?)requestId ?? DBNull.Value);
+
+        var value =
+            await command.ExecuteScalarAsync(
+                cancellationToken);
+
+        return Convert.ToInt32(value);
+    }
 }
 
 public sealed record OperationRow(
