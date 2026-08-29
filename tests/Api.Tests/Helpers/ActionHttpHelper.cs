@@ -152,4 +152,23 @@ public static class ActionHttpHelper
 
         return await Task.WhenAll(tasks);
     }
+
+    public static HttpRequestMessage CreateOperationGetRequest(
+        object payload,
+        string token)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/operation/get");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        request.Content =
+            JsonContent.Create(payload);
+
+        return request;
+    }
 }
