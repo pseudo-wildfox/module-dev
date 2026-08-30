@@ -148,3 +148,32 @@ ALTER DEFAULT PRIVILEGES
     FOR ROLE course_owner
     IN SCHEMA workflow
     REVOKE EXECUTE ON FUNCTIONS FROM workflow_worker;
+
+
+-- ============================================================
+-- 8. Shared action runtime boundary
+--
+-- The workflow worker uses the same generic action executor
+-- as the HTTP API. It may execute api.invoke(), but still
+-- cannot access action target tables/functions directly.
+-- ============================================================
+
+REVOKE ALL
+    ON FUNCTION api.invoke(
+        text,
+        text,
+        integer,
+        jsonb,
+        jsonb
+    )
+    FROM workflow_worker;
+
+GRANT EXECUTE
+    ON FUNCTION api.invoke(
+        text,
+        text,
+        integer,
+        jsonb,
+        jsonb
+    )
+    TO workflow_worker;
