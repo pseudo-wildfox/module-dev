@@ -14,4 +14,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Api.Tests/Api.Tests.csproj" />
   </Folder>
+  <Folder Name="/worker/">
+    <Project Path="worker/Worker.csproj" />
+  </Folder>
 </Solution>
