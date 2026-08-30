@@ -15,4 +15,11 @@
     <ProjectReference Include="..\contracts\ModuleDev.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\contracts\course-1\**\*">
+      <Link>contracts\course-1\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
