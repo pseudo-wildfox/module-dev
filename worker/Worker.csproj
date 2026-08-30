@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\contracts\ModuleDev.Contracts.csproj" />
+    <ProjectReference Include="..\workflow\ModuleDev.Workflow.csproj" />
   </ItemGroup>
 
   <ItemGroup>
