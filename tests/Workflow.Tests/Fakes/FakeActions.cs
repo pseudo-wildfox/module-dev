@@ -72,4 +72,42 @@ public static class FakeActions
             IsDefault = false
         };
     }
+
+
+    public static ActionManifest MissingWorkerScopeCanary()
+    {
+        var action = Canary();
+
+        return new ActionManifest
+        {
+            ContractVersion = action.ContractVersion,
+            Module = action.Module,
+            Action = action.Action,
+            Version = action.Version,
+
+            HttpMethod = action.HttpMethod,
+
+            TargetSchema = action.TargetSchema,
+            TargetFunction = action.TargetFunction,
+
+            RequestSchema = action.RequestSchema,
+            ResponseSchema = action.ResponseSchema,
+
+            Outcomes = action.Outcomes,
+
+            RequiredPolicy =
+            [
+                "payment:read"
+            ],
+
+            IdempotencyMode = action.IdempotencyMode,
+            IdempotencyScope = action.IdempotencyScope,
+
+            TimeoutMs = action.TimeoutMs,
+
+            Enabled = true,
+            IsDefault = true
+        };
+    }
+
 }

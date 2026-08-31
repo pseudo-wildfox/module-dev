@@ -501,4 +501,43 @@ public sealed class WorkflowMapValidatorTests
                 result.Errors));
     }
 
+
+    [Fact]
+    public async Task Missing_worker_scope_should_fail()
+    {
+        var catalog =
+            new FakeActionCatalog();
+
+        catalog.Add(
+            FakeActions.MissingWorkerScopeCanary());
+
+
+        var validator =
+            new WorkflowMapValidator(
+                FakeSchema.WorkflowMap(),
+                catalog);
+
+
+        var json =
+            new WorkflowMapBuilder()
+                .AddAutomatic()
+                .WithPolicy("payment:read")
+                .Transition(
+                    "start",
+                    "APPLIED",
+                    "end")
+                .Build();
+
+
+        var result =
+            await validator.ValidateAsync(json);
+
+
+        Assert.False(
+            result.IsValid,
+            string.Join(
+                Environment.NewLine,
+                result.Errors));
+    }
+
 }

@@ -227,6 +227,41 @@ public sealed class WorkflowMapBuilder
         return this;
     }
 
+    public WorkflowMapBuilder WithPolicy(
+        params string[] policy)
+    {
+        ReplaceAutomaticTask(task =>
+        {
+            return new
+            {
+                service = "postgres",
+                module = "training",
+                action = "canary",
+                action_version = 1,
+
+                required_policy = policy,
+
+                timeout_ms = 2000,
+
+                retry = new
+                {
+                    max_attempts = 3,
+                    delays_ms = new[] { 100, 200 }
+                },
+
+                input_mapping =
+                    new Dictionary<string, string>
+                    {
+                        ["/value"] = "/value"
+                    },
+
+                input_constants = new { }
+            };
+        });
+
+        return this;
+    }
+
     public WorkflowMapBuilder WithBadRetry()
     {
         ReplaceAutomaticTask(task =>
