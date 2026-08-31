@@ -407,6 +407,28 @@ public sealed class WorkflowMapValidator
         WorkflowMap map,
         List<string> errors)
     {
+
+        var duplicates = map.Steps
+            .GroupBy(
+                step => step.Key,
+                StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+
+
+        foreach (var duplicate in duplicates)
+        {
+            errors.Add(
+                $"Step key '{duplicate}' is duplicated.");
+        }
+
+
+        if (duplicates.Length > 0)
+        {
+            return;
+        }
+
         var stepKeys = map.Steps
             .Select(step => step.Key)
             .ToHashSet(StringComparer.Ordinal);
