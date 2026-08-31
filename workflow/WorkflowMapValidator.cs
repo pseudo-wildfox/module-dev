@@ -8,10 +8,12 @@ public sealed class WorkflowMapValidator
 {
     private const string ExpectedContractVersion = "course-1";
     private const string RequiredWorkerPrincipal = "workflow-worker";
+    private const string RequiredTaskService = "postgres";
 
-    // Scopes из нормативного справочника недели 1.
-    // Для hidden actions validator проверяет, что их required_policy
-    // является подмножеством этих доверенных server-side scopes.
+    // Server-side scopes, available to workflow-worker.
+    //
+    // Hidden actions may require any subset of these scopes.
+    // The validator must never derive worker authority from the workflow map.
     private static readonly IReadOnlySet<string> WorkerScopes =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -20,6 +22,7 @@ public sealed class WorkflowMapValidator
         };
 
     private readonly JsonSchema _schema;
+
     private readonly EvaluationOptions _schemaOptions = new()
     {
         OutputFormat = OutputFormat.List,
@@ -60,6 +63,16 @@ public sealed class WorkflowMapValidator
                 document.RootElement,
                 _schemaOptions);
 
+            // The JSON Schema is authoritative for:
+            // - unknown fields
+            // - primitive types
+            // - required fields
+            // - key syntax
+            // - enum-like syntax
+            // - basic numeric bounds
+            //
+            // Semantic checks below intentionally happen only
+            // after the document passes the course-1 schema.
             if (!schemaResult.IsValid)
             {
                 return WorkflowMapValidationResult.Failure(
@@ -83,14 +96,35 @@ public sealed class WorkflowMapValidator
                     ex.Message);
             }
 
-            ValidateTopLevel(map, errors);
-            ValidateSteps(map, errors);
-            ValidateTransitions(map, errors);
-            ValidateGraph(map, errors);
-            ValidateMappings(map, errors);
-            ValidateRetryPolicies(map, errors);
+            ValidateTopLevel(
+                map,
+                errors);
 
-            await ValidateActionsAndPoliciesAsync(
+            ValidateSteps(
+                map,
+                errors);
+
+            ValidateTransitionStructure(
+                map,
+                errors);
+
+            ValidateNonAutomaticOutcomeCoverage(
+                map,
+                errors);
+
+            ValidateGraph(
+                map,
+                errors);
+
+            ValidateMappings(
+                map,
+                errors);
+
+            ValidateRetryPolicies(
+                map,
+                errors);
+
+            await ValidateAutomaticStepsAsync(
                 map,
                 errors,
                 cancellationToken);
@@ -116,29 +150,35 @@ public sealed class WorkflowMapValidator
 
         if (string.IsNullOrWhiteSpace(map.FlowName))
         {
-            errors.Add("flow_name must not be empty.");
+            errors.Add(
+                "flow_name must not be empty.");
         }
 
         if (map.Version < 1)
         {
-            errors.Add("version must be >= 1.");
+            errors.Add(
+                "version must be >= 1.");
         }
 
         if (map.Steps.Count < 2)
         {
-            errors.Add("workflow map must contain at least two steps.");
+            errors.Add(
+                "workflow map must contain at least two steps.");
         }
 
         if (map.Transitions.Count == 0)
         {
-            errors.Add("workflow map must contain at least one transition.");
+            errors.Add(
+                "workflow map must contain at least one transition.");
         }
 
-        if (map.Steps.Count(
-                step => string.Equals(
-                    step.Key,
-                    map.StartStep,
-                    StringComparison.Ordinal)) != 1)
+        var startStepCount = map.Steps.Count(
+            step => string.Equals(
+                step.Key,
+                map.StartStep,
+                StringComparison.Ordinal));
+
+        if (startStepCount != 1)
         {
             errors.Add(
                 $"start_step '{map.StartStep}' must reference exactly one step.");
@@ -155,7 +195,9 @@ public sealed class WorkflowMapValidator
                 StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
-            .OrderBy(key => key, StringComparer.Ordinal)
+            .OrderBy(
+                key => key,
+                StringComparer.Ordinal)
             .ToArray();
 
         foreach (var key in duplicateKeys)
@@ -179,7 +221,7 @@ public sealed class WorkflowMapValidator
             switch (step)
             {
                 case AutomaticStep automatic:
-                    ValidateAutomaticStep(
+                    ValidateAutomaticStepShape(
                         automatic,
                         errors);
                     break;
@@ -207,17 +249,17 @@ public sealed class WorkflowMapValidator
         }
     }
 
-    private static void ValidateAutomaticStep(
+    private static void ValidateAutomaticStepShape(
         AutomaticStep step,
         List<string> errors)
     {
         if (!string.Equals(
                 step.Task.Service,
-                "postgres",
+                RequiredTaskService,
                 StringComparison.Ordinal))
         {
             errors.Add(
-                $"Step '{step.Key}' must use service 'postgres'.");
+                $"Step '{step.Key}' must use service '{RequiredTaskService}'.");
         }
 
         ValidatePolicy(
@@ -232,7 +274,7 @@ public sealed class WorkflowMapValidator
 
         ValidateRetryPolicy(
             step.Task.Retry,
-            $"step '{step.Key}'",
+            step.Key,
             errors);
 
         ValidateMapping(
@@ -268,16 +310,24 @@ public sealed class WorkflowMapValidator
                 $"Step '{step.Key}' must define at least one allowed outcome.");
         }
 
-        if (step.AllowedOutcomes
-            .GroupBy(value => value, StringComparer.Ordinal)
-            .Any(group => group.Count() > 1))
+        var duplicateOutcomes = step.AllowedOutcomes
+            .GroupBy(
+                value => value,
+                StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(
+                value => value,
+                StringComparer.Ordinal);
+
+        foreach (var outcome in duplicateOutcomes)
         {
             errors.Add(
-                $"Step '{step.Key}' contains duplicate allowed outcomes.");
+                $"Step '{step.Key}' contains duplicate allowed outcome '{outcome}'.");
         }
     }
 
-    private static void ValidateTransitions(
+    private static void ValidateTransitionStructure(
         WorkflowMap map,
         List<string> errors)
     {
@@ -295,14 +345,14 @@ public sealed class WorkflowMapValidator
             .GroupBy(
                 transition => (
                     transition.From,
-                    transition.Outcome),
-                EqualityComparer<(string From, string Outcome)>.Default)
+                    transition.Outcome))
             .Where(group => group.Count() > 1);
 
         foreach (var duplicate in duplicateTransitions)
         {
             errors.Add(
-                $"Multiple transitions exist for step '{duplicate.Key.From}' and outcome '{duplicate.Key.Outcome}'.");
+                $"Multiple transitions exist for step '{duplicate.Key.From}' " +
+                $"and outcome '{duplicate.Key.Outcome}'.");
         }
 
         foreach (var transition in map.Transitions)
@@ -322,93 +372,106 @@ public sealed class WorkflowMapValidator
 
         foreach (var endStep in map.Steps.OfType<EndStep>())
         {
-            if (map.Transitions.Any(
-                    transition => string.Equals(
-                        transition.From,
-                        endStep.Key,
-                        StringComparison.Ordinal)))
+            var outgoing = map.Transitions.Any(
+                transition => string.Equals(
+                    transition.From,
+                    endStep.Key,
+                    StringComparison.Ordinal));
+
+            if (outgoing)
             {
                 errors.Add(
                     $"End step '{endStep.Key}' must not have outgoing transitions.");
             }
         }
+    }
 
+    private static void ValidateNonAutomaticOutcomeCoverage(
+        WorkflowMap map,
+        List<string> errors)
+    {
         foreach (var step in map.Steps)
         {
-            var expectedOutcomes = GetExpectedTransitionOutcomes(step);
-
-            if (expectedOutcomes is null)
+            switch (step)
             {
-                continue;
-            }
+                case WaitSignalStep waitSignal:
+                    ValidateTransitionCoverage(
+                        waitSignal.Key,
+                        new[] { waitSignal.Outcome },
+                        map.Transitions,
+                        errors);
+                    break;
 
-            var actualTransitions = map.Transitions
-                .Where(transition =>
-                    string.Equals(
-                        transition.From,
-                        step.Key,
-                        StringComparison.Ordinal))
-                .GroupBy(
-                    transition => transition.Outcome,
-                    StringComparer.Ordinal)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Count(),
-                    StringComparer.Ordinal);
-
-            foreach (var expectedOutcome in expectedOutcomes)
-            {
-                actualTransitions.TryGetValue(
-                    expectedOutcome,
-                    out var count);
-
-                if (count == 0)
-                {
-                    errors.Add(
-                        $"Step '{step.Key}' is missing transition for outcome '{expectedOutcome}'.");
-                }
-                else if (count > 1)
-                {
-                    errors.Add(
-                        $"Step '{step.Key}' must have exactly one transition for outcome '{expectedOutcome}'.");
-                }
-            }
-
-            var expectedSet = expectedOutcomes.ToHashSet(
-                StringComparer.Ordinal);
-
-            foreach (var actualOutcome in actualTransitions.Keys)
-            {
-                if (!expectedSet.Contains(actualOutcome))
-                {
-                    errors.Add(
-                        $"Step '{step.Key}' has transition for undeclared outcome '{actualOutcome}'.");
-                }
+                case ManualStep manual:
+                    ValidateTransitionCoverage(
+                        manual.Key,
+                        manual.AllowedOutcomes,
+                        map.Transitions,
+                        errors);
+                    break;
             }
         }
     }
 
-    private static IReadOnlyList<string>? GetExpectedTransitionOutcomes(
-        FlowStep step)
+    private static void ValidateTransitionCoverage(
+        string stepKey,
+        IReadOnlyList<string> expectedOutcomes,
+        IReadOnlyList<Transition> transitions,
+        List<string> errors)
     {
-        return step switch
+        var transitionsByOutcome = transitions
+            .Where(
+                transition => string.Equals(
+                    transition.From,
+                    stepKey,
+                    StringComparison.Ordinal))
+            .GroupBy(
+                transition => transition.Outcome,
+                StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Count(),
+                StringComparer.Ordinal);
+
+        var expectedSet = expectedOutcomes.ToHashSet(
+            StringComparer.Ordinal);
+
+        foreach (var expectedOutcome in expectedSet)
         {
-            AutomaticStep => null,
-            WaitSignalStep waitSignal =>
-                new[] { waitSignal.Outcome },
-            ManualStep manual =>
-                manual.AllowedOutcomes,
-            EndStep => null,
-            _ => null
-        };
+            transitionsByOutcome.TryGetValue(
+                expectedOutcome,
+                out var count);
+
+            if (count == 0)
+            {
+                errors.Add(
+                    $"Step '{stepKey}' is missing transition " +
+                    $"for outcome '{expectedOutcome}'.");
+            }
+            else if (count > 1)
+            {
+                errors.Add(
+                    $"Step '{stepKey}' must have exactly one transition " +
+                    $"for outcome '{expectedOutcome}'.");
+            }
+        }
+
+        foreach (var actualOutcome in transitionsByOutcome.Keys)
+        {
+            if (!expectedSet.Contains(actualOutcome))
+            {
+                errors.Add(
+                    $"Step '{stepKey}' has transition for undeclared " +
+                    $"outcome '{actualOutcome}'.");
+            }
+        }
     }
 
     private static void ValidateGraph(
         WorkflowMap map,
         List<string> errors)
     {
-
-        var duplicates = map.Steps
+        var duplicateKeys = map.Steps
             .GroupBy(
                 step => step.Key,
                 StringComparer.Ordinal)
@@ -416,15 +479,8 @@ public sealed class WorkflowMapValidator
             .Select(group => group.Key)
             .ToArray();
 
-
-        foreach (var duplicate in duplicates)
-        {
-            errors.Add(
-                $"Step key '{duplicate}' is duplicated.");
-        }
-
-
-        if (duplicates.Length > 0)
+        // Without unique step keys the graph is ambiguous.
+        if (duplicateKeys.Length > 0)
         {
             return;
         }
@@ -439,9 +495,10 @@ public sealed class WorkflowMapValidator
         }
 
         var adjacency = map.Transitions
-            .Where(transition =>
-                stepKeys.Contains(transition.From)
-                && stepKeys.Contains(transition.To))
+            .Where(
+                transition =>
+                    stepKeys.Contains(transition.From)
+                    && stepKeys.Contains(transition.To))
             .GroupBy(
                 transition => transition.From,
                 StringComparer.Ordinal)
@@ -462,7 +519,8 @@ public sealed class WorkflowMapValidator
             if (!reachable.Contains(step.Key))
             {
                 errors.Add(
-                    $"Step '{step.Key}' is unreachable from start_step '{map.StartStep}'.");
+                    $"Step '{step.Key}' is unreachable from " +
+                    $"start_step '{map.StartStep}'.");
             }
         }
 
@@ -471,26 +529,25 @@ public sealed class WorkflowMapValidator
             .Select(step => step.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-        if (!reachable.Overlaps(endKeys))
+        var reachableEndExists =
+            reachable.Overlaps(endKeys);
+
+        if (!reachableEndExists)
         {
             errors.Add(
                 "Workflow map must have at least one reachable end step.");
         }
 
-        if (HasCycle(map, adjacency))
+        if (HasCycle(
+                map,
+                adjacency))
         {
             errors.Add(
                 "Workflow map must be acyclic.");
         }
 
-        var reachableEnds = reachable
-            .Where(endKeys.Contains)
-            .ToHashSet(StringComparer.Ordinal);
-
-        if (reachableEnds.Count == 0)
+        if (!reachableEndExists)
         {
-            errors.Add(
-                "Workflow map has no reachable end step.");
             return;
         }
 
@@ -512,7 +569,8 @@ public sealed class WorkflowMapValidator
                     endKeys))
             {
                 errors.Add(
-                    $"Step '{step.Key}' leads to a dead end that cannot reach an end step.");
+                    $"Step '{step.Key}' leads to a dead end that " +
+                    "cannot reach an end step.");
             }
         }
     }
@@ -662,7 +720,6 @@ public sealed class WorkflowMapValidator
         return false;
     }
 
-    
     private static void ValidateMappings(
         WorkflowMap map,
         List<string> errors)
@@ -696,19 +753,24 @@ public sealed class WorkflowMapValidator
             var target = mapping.Key;
             var source = mapping.Value;
 
-            if (!IsValidJsonPointer(target))
+            var targetValid = IsValidJsonPointer(target);
+            var sourceValid = IsValidJsonPointer(source);
+
+            if (!targetValid)
             {
                 errors.Add(
-                    $"Step '{stepKey}' has invalid target JSON Pointer '{target}'.");
+                    $"Step '{stepKey}' has invalid target " +
+                    $"JSON Pointer '{target}'.");
             }
 
-            if (!IsValidJsonPointer(source))
+            if (!sourceValid)
             {
                 errors.Add(
-                    $"Step '{stepKey}' has invalid source JSON Pointer '{source}'.");
+                    $"Step '{stepKey}' has invalid source " +
+                    $"JSON Pointer '{source}'.");
             }
 
-            if (IsValidJsonPointer(target))
+            if (targetValid)
             {
                 mappingTargets.Add(target);
             }
@@ -718,20 +780,22 @@ public sealed class WorkflowMapValidator
         {
             for (var j = i + 1; j < mappingTargets.Count; j++)
             {
-                if (PointersOverlap(
-                        mappingTargets[i],
-                        mappingTargets[j]))
+                var left = mappingTargets[i];
+                var right = mappingTargets[j];
+
+                if (PointersOverlap(left, right))
                 {
                     errors.Add(
-                        $"Step '{stepKey}' contains overlapping input_mapping targets '{mappingTargets[i]}' and '{mappingTargets[j]}'.");
+                        $"Step '{stepKey}' contains overlapping " +
+                        $"input_mapping targets '{left}' and '{right}'.");
                 }
             }
         }
 
         foreach (var constant in task.InputConstants.EnumerateObject())
         {
-            var constantPointer = "/" + EscapeJsonPointerToken(
-                constant.Name);
+            var constantPointer =
+                "/" + EscapeJsonPointerToken(constant.Name);
 
             foreach (var target in mappingTargets)
             {
@@ -740,7 +804,8 @@ public sealed class WorkflowMapValidator
                         target))
                 {
                     errors.Add(
-                        $"Step '{stepKey}' input_constants property '{constant.Name}' overlaps mapping target '{target}'.");
+                        $"Step '{stepKey}' input_constants property " +
+                        $"'{constant.Name}' overlaps mapping target '{target}'.");
                 }
             }
         }
@@ -769,7 +834,8 @@ public sealed class WorkflowMapValidator
 
             var next = pointer[i + 1];
 
-            if (next != '0' && next != '1')
+            if (next != '0'
+                && next != '1')
             {
                 return false;
             }
@@ -802,6 +868,7 @@ public sealed class WorkflowMapValidator
             }
         }
 
+        // Same pointer or one pointer is an ancestor of the other.
         return true;
     }
 
@@ -821,16 +888,28 @@ public sealed class WorkflowMapValidator
         string token)
     {
         return token
-            .Replace("~1", "/", StringComparison.Ordinal)
-            .Replace("~0", "~", StringComparison.Ordinal);
+            .Replace(
+                "~1",
+                "/",
+                StringComparison.Ordinal)
+            .Replace(
+                "~0",
+                "~",
+                StringComparison.Ordinal);
     }
 
     private static string EscapeJsonPointerToken(
         string token)
     {
         return token
-            .Replace("~", "~0", StringComparison.Ordinal)
-            .Replace("/", "~1", StringComparison.Ordinal);
+            .Replace(
+                "~",
+                "~0",
+                StringComparison.Ordinal)
+            .Replace(
+                "/",
+                "~1",
+                StringComparison.Ordinal);
     }
 
     private static void ValidateRetryPolicies(
@@ -841,34 +920,40 @@ public sealed class WorkflowMapValidator
         {
             ValidateRetryPolicy(
                 step.Task.Retry,
-                $"step '{step.Key}'",
+                step.Key,
                 errors);
         }
     }
 
-
     private static void ValidateRetryPolicy(
         RetryPolicy retry,
-        string location,
+        string stepKey,
         List<string> errors)
     {
-        if (retry.MaxAttempts is < 1 or > 10)
-        {
-            errors.Add(
-                $"{location} retry.max_attempts must be between 1 and 10.");
-        }
+        var maxAttemptsValid =
+            retry.MaxAttempts is >= 1 and <= 10;
 
-        if (retry.DelaysMs.Count != retry.MaxAttempts - 1)
+        if (!maxAttemptsValid)
         {
             errors.Add(
-                $"{location} retry.delays_ms must contain exactly max_attempts - 1 values.");
+                $"Step '{stepKey}' retry.max_attempts " +
+                "must be between 1 and 10.");
         }
 
         if (retry.DelaysMs.Any(
                 delay => delay is < 0 or > 30000))
         {
             errors.Add(
-                $"{location} retry.delays_ms values must be between 0 and 30000.");
+                $"Step '{stepKey}' retry.delays_ms values " +
+                "must be between 0 and 30000.");
+        }
+
+        if (maxAttemptsValid
+            && retry.DelaysMs.Count != retry.MaxAttempts - 1)
+        {
+            errors.Add(
+                $"Step '{stepKey}' retry.delays_ms must contain " +
+                "exactly max_attempts - 1 values.");
         }
     }
 
@@ -890,9 +975,14 @@ public sealed class WorkflowMapValidator
         List<string> errors)
     {
         var duplicates = policy
-            .GroupBy(value => value, StringComparer.Ordinal)
+            .GroupBy(
+                value => value,
+                StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
-            .Select(group => group.Key);
+            .Select(group => group.Key)
+            .OrderBy(
+                value => value,
+                StringComparer.Ordinal);
 
         foreach (var duplicate in duplicates)
         {
@@ -901,7 +991,7 @@ public sealed class WorkflowMapValidator
         }
     }
 
-    private async Task ValidateActionsAndPoliciesAsync(
+    private async Task ValidateAutomaticStepsAsync(
         WorkflowMap map,
         List<string> errors,
         CancellationToken cancellationToken)
@@ -935,7 +1025,9 @@ public sealed class WorkflowMapValidator
             if (action is null)
             {
                 errors.Add(
-                    $"Step '{step.Key}' references unknown action '{task.Module}.{task.Action}' version {task.ActionVersion}.");
+                    $"Step '{step.Key}' references unknown action " +
+                    $"'{task.Module}.{task.Action}' " +
+                    $"version {task.ActionVersion}.");
 
                 continue;
             }
@@ -943,45 +1035,97 @@ public sealed class WorkflowMapValidator
             if (!action.Enabled)
             {
                 errors.Add(
-                    $"Step '{step.Key}' references disabled action '{task.Module}.{task.Action}' version {task.ActionVersion}.");
+                    $"Step '{step.Key}' references disabled action " +
+                    $"'{task.Module}.{task.Action}' " +
+                    $"version {task.ActionVersion}.");
             }
 
-            var taskPolicy = task.RequiredPolicy.ToHashSet(
-                StringComparer.Ordinal);
-
-            var actionPolicy = action.RequiredPolicy.ToHashSet(
-                StringComparer.Ordinal);
-
-            if (!taskPolicy.SetEquals(actionPolicy))
-            {
-                errors.Add(
-                    $"Step '{step.Key}' task.required_policy must exactly match action '{task.Module}.{task.Action}' version {task.ActionVersion} required_policy.");
-            }
-
-            foreach (var requiredScope in taskPolicy)
-            {
-                if (!WorkerScopes.Contains(requiredScope))
-                {
-                    errors.Add(
-                        $"Step '{step.Key}' requires scope '{requiredScope}', which is not granted to {RequiredWorkerPrincipal}.");
-                }
-            }
-
-
-            if (!string.Equals(
-                    action.HttpMethod,
-                    "POST",
-                    StringComparison.Ordinal))
-            {
-                errors.Add(
-                    $"Action '{task.Module}.{task.Action}' version {task.ActionVersion} must use POST.");
-            }
-
-            ValidateTaskTargetIdentifier(
-                task.Module,
-                $"step '{step.Key}' task.module",
+            ValidateExactPolicy(
+                task.RequiredPolicy,
+                action.RequiredPolicy,
+                step.Key,
                 errors);
 
+            ValidateWorkerScopes(
+                task.RequiredPolicy,
+                step.Key,
+                errors);
+
+            ValidateActionMethod(
+                action,
+                step.Key,
+                errors);
+
+            ValidateAutomaticOutcomeCoverage(
+                step,
+                action,
+                map.Transitions,
+                errors);
+        }
+    }
+
+    private static void ValidateAutomaticOutcomeCoverage(
+        AutomaticStep step,
+        ActionManifest action,
+        IReadOnlyList<Transition> transitions,
+        List<string> errors)
+    {
+        ValidateTransitionCoverage(
+            step.Key,
+            action.Outcomes,
+            transitions,
+            errors);
+    }
+
+    private static void ValidateExactPolicy(
+        IReadOnlyList<string> taskPolicy,
+        IReadOnlyList<string> actionPolicy,
+        string stepKey,
+        List<string> errors)
+    {
+        var taskSet = taskPolicy.ToHashSet(
+            StringComparer.Ordinal);
+
+        var actionSet = actionPolicy.ToHashSet(
+            StringComparer.Ordinal);
+
+        if (!taskSet.SetEquals(actionSet))
+        {
+            errors.Add(
+                $"Step '{stepKey}' task.required_policy must exactly " +
+                "match the referenced action required_policy.");
+        }
+    }
+
+    private static void ValidateWorkerScopes(
+        IReadOnlyList<string> requiredPolicy,
+        string stepKey,
+        List<string> errors)
+    {
+        foreach (var requiredScope in requiredPolicy)
+        {
+            if (!WorkerScopes.Contains(requiredScope))
+            {
+                errors.Add(
+                    $"Step '{stepKey}' requires scope '{requiredScope}', " +
+                    $"which is not granted to {RequiredWorkerPrincipal}.");
+            }
+        }
+    }
+
+    private static void ValidateActionMethod(
+        ActionManifest action,
+        string stepKey,
+        List<string> errors)
+    {
+        if (!string.Equals(
+                action.HttpMethod,
+                "POST",
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                $"Action '{action.Module}.{action.Action}' " +
+                $"version {action.Version} must use POST.");
         }
     }
 
@@ -996,6 +1140,7 @@ public sealed class WorkflowMapValidator
         {
             errors.Add(
                 $"{location} is not a valid SQL identifier.");
+
             return;
         }
 
@@ -1003,16 +1148,17 @@ public sealed class WorkflowMapValidator
         {
             var character = value[i];
 
-            if (!(
-                    char.IsAsciiLetterLower(character)
-                    || char.IsAsciiDigit(character)
-                    || character == '_'))
+            if (char.IsAsciiLetterLower(character)
+                || char.IsAsciiDigit(character)
+                || character == '_')
             {
-                errors.Add(
-                    $"{location} is not a valid SQL identifier.");
-
-                return;
+                continue;
             }
+
+            errors.Add(
+                $"{location} is not a valid SQL identifier.");
+
+            return;
         }
     }
 
