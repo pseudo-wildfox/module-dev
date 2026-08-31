@@ -13,5 +13,12 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Api.Tests/Api.Tests.csproj" />
+    <Project Path="tests/Workflow.Tests/Workflow.Tests.csproj" />
+  </Folder>
+  <Folder Name="/worker/">
+    <Project Path="worker/Worker.csproj" />
+  </Folder>
+  <Folder Name="/workflow/">
+    <Project Path="workflow/ModuleDev.Workflow.csproj" />
   </Folder>
 </Solution>

@@ -24,6 +24,10 @@ CREATE ROLE course_runtime
     PASSWORD '${COURSE_RUNTIME_PASSWORD}';
 
 
+CREATE ROLE workflow_worker
+    LOGIN
+    PASSWORD '${WORKFLOW_WORKER_PASSWORD}';
+
 GRANT course_owner TO course_migrator;
 
 EOSQL
