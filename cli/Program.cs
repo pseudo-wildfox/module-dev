@@ -3,6 +3,7 @@ using ModuleDev.Cli.Database;
 using ModuleDev.Cli.Migrations;
 using ModuleDev.Cli.Output;
 using ModuleDev.Contracts.Validation;
+using ModuleDev.Workflow;
 
 
 const string contractVersion = "course-1";
@@ -68,6 +69,35 @@ var actionDisable =
         output);
 
 
+
+var workflowSchemaPath = Path.Combine(
+    AppContext.BaseDirectory,
+    "contracts",
+    "course-1",
+    "workflow-map.schema.json");
+
+
+var workflowSchemaJson =
+    await File.ReadAllTextAsync(workflowSchemaPath);
+
+
+var actionCatalog =
+    new PostgresActionCatalog(database);
+
+
+var workflowValidator =
+    new WorkflowMapValidator(
+        workflowSchemaJson,
+        actionCatalog);
+
+
+var flowValidate =
+    new FlowValidateCommand(
+        workflowValidator,
+        output);
+
+
+
 var dispatcher =
     new CommandDispatcher(
         migrations,
@@ -76,6 +106,7 @@ var dispatcher =
         actionList,
         actionActivate,
         actionDisable,
+        flowValidate,
         output);
 
 

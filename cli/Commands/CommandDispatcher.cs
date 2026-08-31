@@ -11,6 +11,10 @@ public sealed class CommandDispatcher
     private readonly ActionListCommand _actionList;
     private readonly ActionActivateCommand _actionActivate;
     private readonly ActionDisableCommand _actionDisable;
+
+
+    private readonly FlowValidateCommand _flowValidate;
+
     private readonly CliOutput _output;
 
     public CommandDispatcher(
@@ -20,6 +24,7 @@ public sealed class CommandDispatcher
         ActionListCommand actionList,
         ActionActivateCommand actionActivate,
         ActionDisableCommand actionDisable,
+        FlowValidateCommand flowValidate,
         CliOutput output)
     {
         _migrations = migrations;
@@ -28,6 +33,7 @@ public sealed class CommandDispatcher
         _actionList = actionList;
         _actionActivate = actionActivate;
         _actionDisable = actionDisable;
+        _flowValidate = flowValidate;
         _output = output;
     }
 
@@ -80,6 +86,13 @@ public sealed class CommandDispatcher
         if (IsCommand(args, "action", "disable"))
         {
             return await ExecuteActionDisableAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "validate"))
+        {
+            return await ExecuteFlowValidateAsync(
                 args,
                 cancellationToken);
         }
@@ -238,6 +251,22 @@ public sealed class CommandDispatcher
             actionKey,
             version,
             replacementVersion,
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteFlowValidateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow validate <file>");
+        }
+
+        return await _flowValidate.ExecuteAsync(
+            args[2],
             cancellationToken);
     }
 
