@@ -332,6 +332,36 @@ public sealed class CommandDispatcher
             cancellationToken);
     }
 
+    private async Task<int> ExecuteFlowActivateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 5 ||
+            !args[3].Equals(
+                "--version",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow activate <flow> --version <version>");
+        }
+
+        if (!int.TryParse(
+                args[4],
+                out var version))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "version must be an integer");
+        }
+
+        return await _flowActivate.ExecuteAsync(
+            args[2],
+            version,
+            cancellationToken);
+    }
+
 
     private static bool IsCommand(
         string[] args,
