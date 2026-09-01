@@ -12,6 +12,7 @@ using ModuleDev.Api.Security;
 using ModuleDev.Contracts.Validation;
 using ModuleDev.Contracts;
 using ModuleDev.Api.Http;
+using ModuleDev.Workflow;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,7 +30,10 @@ builder.Services.AddSingleton(
 
 
 builder.Services.AddSingleton<DbConnectionFactory>();
+
 builder.Services.AddScoped<IActionRepository, ActionRepository>();
+builder.Services.AddScoped<IActionCatalog, ActionCatalogRepositoryAdapter>();
+
 builder.Services.AddScoped<ActionVersionResolver>();
 
 builder.Services.AddSingleton<PolicyEvaluator>();

@@ -4,11 +4,13 @@ WORKDIR /src
 
 COPY api/Api.csproj api/
 COPY contracts/ModuleDev.Contracts.csproj contracts/
+COPY workflow/ModuleDev.Workflow.csproj workflow/
 
 RUN dotnet restore api/Api.csproj
 
 COPY api/ api/
 COPY contracts/ contracts/
+COPY workflow/ workflow/
 
 RUN dotnet publish api/Api.csproj \
     -c Release \
