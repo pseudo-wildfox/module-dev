@@ -103,6 +103,12 @@ var flowPublish =
         workflowValidator,
         output);
 
+var flowList =
+    new FlowListCommand(
+        database,
+        output);
+
+
 var dispatcher =
     new CommandDispatcher(
         migrations,
@@ -113,6 +119,7 @@ var dispatcher =
         actionDisable,
         flowValidate,
         flowPublish,
+        flowList,
         output);
 
 

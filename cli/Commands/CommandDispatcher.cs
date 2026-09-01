@@ -12,10 +12,9 @@ public sealed class CommandDispatcher
     private readonly ActionActivateCommand _actionActivate;
     private readonly ActionDisableCommand _actionDisable;
 
-
     private readonly FlowValidateCommand _flowValidate;
-
     private readonly FlowPublishCommand _flowPublish;
+    private readonly FlowListCommand _flowList;
 
     private readonly CliOutput _output;
 
@@ -28,6 +27,7 @@ public sealed class CommandDispatcher
         ActionDisableCommand actionDisable,
         FlowValidateCommand flowValidate,
         FlowPublishCommand flowPublish,
+        FlowListCommand flowList,
         CliOutput output)
     {
         _migrations = migrations;
@@ -38,6 +38,7 @@ public sealed class CommandDispatcher
         _actionDisable = actionDisable;
         _flowValidate = flowValidate;
         _flowPublish = flowPublish;
+        _flowList = flowList;
         _output = output;
     }
 
@@ -107,6 +108,14 @@ public sealed class CommandDispatcher
                 args,
                 cancellationToken);
         }
+
+        if (IsCommand(args, "flow", "list"))
+        {
+            return await ExecuteFlowListAsync(
+                args,
+                cancellationToken);
+        }
+
 
         return _output.Error(
             code: "request.invalid",
@@ -294,6 +303,22 @@ public sealed class CommandDispatcher
 
         return await _flowPublish.ExecuteAsync(
             args[2],
+            cancellationToken);
+    }
+
+
+    private async Task<int> ExecuteFlowListAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 2)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow list");
+        }
+
+        return await _flowList.ExecuteAsync(
             cancellationToken);
     }
 
