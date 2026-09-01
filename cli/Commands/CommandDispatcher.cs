@@ -16,6 +16,7 @@ public sealed class CommandDispatcher
     private readonly FlowPublishCommand _flowPublish;
     private readonly FlowListCommand _flowList;
     private readonly FlowActivateCommand _flowActivate;
+    private readonly FlowStartCommand _flowStart;
 
     private readonly CliOutput _output;
 
@@ -30,6 +31,7 @@ public sealed class CommandDispatcher
         FlowPublishCommand flowPublish,
         FlowListCommand flowList,
         FlowActivateCommand flowActivate,
+        FlowStartCommand flowStart,
         CliOutput output)
     {
         _migrations = migrations;
@@ -42,6 +44,7 @@ public sealed class CommandDispatcher
         _flowPublish = flowPublish;
         _flowList = flowList;
         _flowActivate = flowActivate;
+        _flowStart = flowStart;
         _output = output;
     }
 
@@ -122,6 +125,13 @@ public sealed class CommandDispatcher
         if (IsCommand(args, "flow", "activate"))
         {
             return await ExecuteFlowActivateAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "start"))
+        {
+            return await ExecuteFlowStartAsync(
                 args,
                 cancellationToken);
         }
@@ -361,6 +371,55 @@ public sealed class CommandDispatcher
             version,
             cancellationToken);
     }
+
+private async Task<int> ExecuteFlowStartAsync(
+    string[] args,
+    CancellationToken cancellationToken)
+{
+    if (args.Length != 5 && args.Length != 7)
+    {
+        return _output.Error(
+            code: "request.invalid",
+            message:
+                "usage: flow start <flow> --business-key <key> [--data <file>]");
+    }
+
+    if (!args[3].Equals(
+            "--business-key",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        return _output.Error(
+            code: "request.invalid",
+            message:
+                "usage: flow start <flow> --business-key <key> [--data <file>]");
+    }
+
+    var flowName = args[2];
+    var businessKey = args[4];
+
+    string? dataPath = null;
+
+    if (args.Length == 7)
+    {
+        if (!args[5].Equals(
+                "--data",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow start <flow> --business-key <key> [--data <file>]");
+        }
+
+        dataPath = args[6];
+    }
+
+    return await _flowStart.ExecuteAsync(
+        flowName,
+        businessKey,
+        dataPath,
+        cancellationToken);
+}
 
 
     private static bool IsCommand(

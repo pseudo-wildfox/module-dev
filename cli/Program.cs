@@ -113,6 +113,11 @@ var flowActivate =
         database,
         output);
 
+var flowStart =
+    new FlowStartCommand(
+        database,
+        output);
+
 
 var dispatcher =
     new CommandDispatcher(
@@ -126,6 +131,7 @@ var dispatcher =
         flowPublish,
         flowList,
         flowActivate,
+        flowStart,
         output);
 
 
