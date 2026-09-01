@@ -18,6 +18,7 @@ public sealed class CommandDispatcher
     private readonly FlowActivateCommand _flowActivate;
     private readonly FlowStartCommand _flowStart;
     private readonly FlowGetCommand _flowGet;
+    private readonly FlowSignalCommand _flowSignal;
 
     private readonly CliOutput _output;
 
@@ -34,6 +35,7 @@ public sealed class CommandDispatcher
         FlowActivateCommand flowActivate,
         FlowStartCommand flowStart,
         FlowGetCommand flowGet,
+        FlowSignalCommand flowSignal,
         CliOutput output)
     {
         _migrations = migrations;
@@ -48,6 +50,7 @@ public sealed class CommandDispatcher
         _flowActivate = flowActivate;
         _flowStart = flowStart;
         _flowGet = flowGet;
+        _flowSignal = flowSignal;
         _output = output;
     }
 
@@ -145,6 +148,13 @@ public sealed class CommandDispatcher
                 args,
                 cancellationToken);
         }       
+
+        if (IsCommand(args, "flow", "signal"))
+        {
+            return await ExecuteFlowSignalAsync(
+                args,
+                cancellationToken);
+        }
 
 
         return _output.Error(
@@ -454,7 +464,55 @@ private async Task<int> ExecuteFlowStartAsync(
         return await _flowGet.ExecuteAsync(
             processId,
             cancellationToken);
-}
+    }
+
+
+    private async Task<int> ExecuteFlowSignalAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 9)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow signal <process-id> --type <type> --message-id <id> --payload <file>");
+        }
+
+        if (!Guid.TryParse(
+                args[2],
+                out var processId))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "process-id must be a valid UUID");
+        }
+
+        if (!args[3].Equals(
+                "--type",
+                StringComparison.OrdinalIgnoreCase)
+            ||
+            !args[5].Equals(
+                "--message-id",
+                StringComparison.OrdinalIgnoreCase)
+            ||
+            !args[7].Equals(
+                "--payload",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow signal <process-id> --type <type> --message-id <id> --payload <file>");
+        }
+
+        return await _flowSignal.ExecuteAsync(
+            processId,
+            args[4],
+            args[6],
+            args[8],
+            cancellationToken);
+    }
 
 
     private static bool IsCommand(

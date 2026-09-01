@@ -123,6 +123,11 @@ var flowGet =
         database,
         output);
 
+var flowSignal =
+    new FlowSignalCommand(
+        database,
+        output);
+        
 
 var dispatcher =
     new CommandDispatcher(
@@ -138,6 +143,7 @@ var dispatcher =
         flowActivate,
         flowStart,
         flowGet,
+        flowSignal,
         output);
 
 
