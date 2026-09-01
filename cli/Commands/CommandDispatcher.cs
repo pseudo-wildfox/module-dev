@@ -15,6 +15,8 @@ public sealed class CommandDispatcher
 
     private readonly FlowValidateCommand _flowValidate;
 
+    private readonly FlowPublishCommand _flowPublish;
+
     private readonly CliOutput _output;
 
     public CommandDispatcher(
@@ -25,6 +27,7 @@ public sealed class CommandDispatcher
         ActionActivateCommand actionActivate,
         ActionDisableCommand actionDisable,
         FlowValidateCommand flowValidate,
+        FlowPublishCommand flowPublish,
         CliOutput output)
     {
         _migrations = migrations;
@@ -34,6 +37,7 @@ public sealed class CommandDispatcher
         _actionActivate = actionActivate;
         _actionDisable = actionDisable;
         _flowValidate = flowValidate;
+        _flowPublish = flowPublish;
         _output = output;
     }
 
@@ -93,6 +97,13 @@ public sealed class CommandDispatcher
         if (IsCommand(args, "flow", "validate"))
         {
             return await ExecuteFlowValidateAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "publish"))
+        {
+            return await ExecuteFlowPublishAsync(
                 args,
                 cancellationToken);
         }
@@ -266,6 +277,22 @@ public sealed class CommandDispatcher
         }
 
         return await _flowValidate.ExecuteAsync(
+            args[2],
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteFlowPublishAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow publish <file>");
+        }
+
+        return await _flowPublish.ExecuteAsync(
             args[2],
             cancellationToken);
     }

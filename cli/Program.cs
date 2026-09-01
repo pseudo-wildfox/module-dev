@@ -97,6 +97,11 @@ var flowValidate =
         output);
 
 
+var flowPublish =
+    new FlowPublishCommand(
+        database,
+        workflowValidator,
+        output);
 
 var dispatcher =
     new CommandDispatcher(
@@ -107,6 +112,7 @@ var dispatcher =
         actionActivate,
         actionDisable,
         flowValidate,
+        flowPublish,
         output);
 
 
