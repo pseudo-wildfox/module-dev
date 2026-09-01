@@ -17,6 +17,7 @@ public sealed class CommandDispatcher
     private readonly FlowListCommand _flowList;
     private readonly FlowActivateCommand _flowActivate;
     private readonly FlowStartCommand _flowStart;
+    private readonly FlowGetCommand _flowGet;
 
     private readonly CliOutput _output;
 
@@ -32,6 +33,7 @@ public sealed class CommandDispatcher
         FlowListCommand flowList,
         FlowActivateCommand flowActivate,
         FlowStartCommand flowStart,
+        FlowGetCommand flowGet,
         CliOutput output)
     {
         _migrations = migrations;
@@ -45,6 +47,7 @@ public sealed class CommandDispatcher
         _flowList = flowList;
         _flowActivate = flowActivate;
         _flowStart = flowStart;
+        _flowGet = flowGet;
         _output = output;
     }
 
@@ -135,6 +138,13 @@ public sealed class CommandDispatcher
                 args,
                 cancellationToken);
         }
+
+        if (IsCommand(args, "flow", "get"))
+        {
+            return await ExecuteFlowGetAsync(
+                args,
+                cancellationToken);
+        }       
 
 
         return _output.Error(
@@ -419,6 +429,31 @@ private async Task<int> ExecuteFlowStartAsync(
         businessKey,
         dataPath,
         cancellationToken);
+}
+
+    private async Task<int> ExecuteFlowGetAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow get <process-id>");
+        }
+
+        if (!Guid.TryParse(
+                args[2],
+                out var processId))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "process-id must be a valid UUID");
+        }
+
+        return await _flowGet.ExecuteAsync(
+            processId,
+            cancellationToken);
 }
 
 
