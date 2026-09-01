@@ -108,6 +108,11 @@ var flowList =
         database,
         output);
 
+var flowActivate =
+    new FlowActivateCommand(
+        database,
+        output);
+
 
 var dispatcher =
     new CommandDispatcher(
@@ -120,6 +125,7 @@ var dispatcher =
         flowValidate,
         flowPublish,
         flowList,
+        flowActivate,
         output);
 
 

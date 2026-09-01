@@ -15,6 +15,7 @@ public sealed class CommandDispatcher
     private readonly FlowValidateCommand _flowValidate;
     private readonly FlowPublishCommand _flowPublish;
     private readonly FlowListCommand _flowList;
+    private readonly FlowActivateCommand _flowActivate;
 
     private readonly CliOutput _output;
 
@@ -28,6 +29,7 @@ public sealed class CommandDispatcher
         FlowValidateCommand flowValidate,
         FlowPublishCommand flowPublish,
         FlowListCommand flowList,
+        FlowActivateCommand flowActivate,
         CliOutput output)
     {
         _migrations = migrations;
@@ -39,6 +41,7 @@ public sealed class CommandDispatcher
         _flowValidate = flowValidate;
         _flowPublish = flowPublish;
         _flowList = flowList;
+        _flowActivate = flowActivate;
         _output = output;
     }
 
@@ -112,6 +115,13 @@ public sealed class CommandDispatcher
         if (IsCommand(args, "flow", "list"))
         {
             return await ExecuteFlowListAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "activate"))
+        {
+            return await ExecuteFlowActivateAsync(
                 args,
                 cancellationToken);
         }
