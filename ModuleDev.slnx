@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/action-runtime/">
+    <Project Path="action-runtime/ModuleDev.ActionRuntime.csproj" />
+  </Folder>
   <Folder Name="/api/">
     <Project Path="api/Api.csproj" />
   </Folder>
