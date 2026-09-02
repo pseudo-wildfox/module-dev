@@ -1,7 +1,6 @@
 using Npgsql;
 
-namespace ModuleDev.Api.Database;
-
+namespace ModuleDev.ActionRuntime;
 public sealed class DbConnectionFactory
 {
     public async Task<NpgsqlConnection> OpenAsync(

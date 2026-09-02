@@ -1,13 +1,14 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using ModuleDev.ActionRuntime;
 
 namespace ModuleDev.Api.Health;
 
 public sealed class DatabaseHealthCheck : IHealthCheck
 {
-    private readonly Database.DbConnectionFactory _connectionFactory;
+    private readonly DbConnectionFactory _connectionFactory;
 
     public DatabaseHealthCheck(
-        Database.DbConnectionFactory connectionFactory)
+        DbConnectionFactory connectionFactory)
     {
         _connectionFactory = connectionFactory;
     }

@@ -97,6 +97,37 @@ var flowValidate =
         output);
 
 
+var flowPublish =
+    new FlowPublishCommand(
+        database,
+        workflowValidator,
+        output);
+
+var flowList =
+    new FlowListCommand(
+        database,
+        output);
+
+var flowActivate =
+    new FlowActivateCommand(
+        database,
+        output);
+
+var flowStart =
+    new FlowStartCommand(
+        database,
+        output);
+
+var flowGet =
+    new FlowGetCommand(
+        database,
+        output);
+
+var flowSignal =
+    new FlowSignalCommand(
+        database,
+        output);
+        
 
 var dispatcher =
     new CommandDispatcher(
@@ -107,6 +138,12 @@ var dispatcher =
         actionActivate,
         actionDisable,
         flowValidate,
+        flowPublish,
+        flowList,
+        flowActivate,
+        flowStart,
+        flowGet,
+        flowSignal,
         output);
 
 

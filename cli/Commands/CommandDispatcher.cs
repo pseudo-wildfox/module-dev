@@ -12,8 +12,13 @@ public sealed class CommandDispatcher
     private readonly ActionActivateCommand _actionActivate;
     private readonly ActionDisableCommand _actionDisable;
 
-
     private readonly FlowValidateCommand _flowValidate;
+    private readonly FlowPublishCommand _flowPublish;
+    private readonly FlowListCommand _flowList;
+    private readonly FlowActivateCommand _flowActivate;
+    private readonly FlowStartCommand _flowStart;
+    private readonly FlowGetCommand _flowGet;
+    private readonly FlowSignalCommand _flowSignal;
 
     private readonly CliOutput _output;
 
@@ -25,6 +30,12 @@ public sealed class CommandDispatcher
         ActionActivateCommand actionActivate,
         ActionDisableCommand actionDisable,
         FlowValidateCommand flowValidate,
+        FlowPublishCommand flowPublish,
+        FlowListCommand flowList,
+        FlowActivateCommand flowActivate,
+        FlowStartCommand flowStart,
+        FlowGetCommand flowGet,
+        FlowSignalCommand flowSignal,
         CliOutput output)
     {
         _migrations = migrations;
@@ -34,6 +45,12 @@ public sealed class CommandDispatcher
         _actionActivate = actionActivate;
         _actionDisable = actionDisable;
         _flowValidate = flowValidate;
+        _flowPublish = flowPublish;
+        _flowList = flowList;
+        _flowActivate = flowActivate;
+        _flowStart = flowStart;
+        _flowGet = flowGet;
+        _flowSignal = flowSignal;
         _output = output;
     }
 
@@ -96,6 +113,49 @@ public sealed class CommandDispatcher
                 args,
                 cancellationToken);
         }
+
+        if (IsCommand(args, "flow", "publish"))
+        {
+            return await ExecuteFlowPublishAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "list"))
+        {
+            return await ExecuteFlowListAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "activate"))
+        {
+            return await ExecuteFlowActivateAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "start"))
+        {
+            return await ExecuteFlowStartAsync(
+                args,
+                cancellationToken);
+        }
+
+        if (IsCommand(args, "flow", "get"))
+        {
+            return await ExecuteFlowGetAsync(
+                args,
+                cancellationToken);
+        }       
+
+        if (IsCommand(args, "flow", "signal"))
+        {
+            return await ExecuteFlowSignalAsync(
+                args,
+                cancellationToken);
+        }
+
 
         return _output.Error(
             code: "request.invalid",
@@ -267,6 +327,190 @@ public sealed class CommandDispatcher
 
         return await _flowValidate.ExecuteAsync(
             args[2],
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteFlowPublishAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow publish <file>");
+        }
+
+        return await _flowPublish.ExecuteAsync(
+            args[2],
+            cancellationToken);
+    }
+
+
+    private async Task<int> ExecuteFlowListAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 2)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow list");
+        }
+
+        return await _flowList.ExecuteAsync(
+            cancellationToken);
+    }
+
+    private async Task<int> ExecuteFlowActivateAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 5 ||
+            !args[3].Equals(
+                "--version",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow activate <flow> --version <version>");
+        }
+
+        if (!int.TryParse(
+                args[4],
+                out var version))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "version must be an integer");
+        }
+
+        return await _flowActivate.ExecuteAsync(
+            args[2],
+            version,
+            cancellationToken);
+    }
+
+private async Task<int> ExecuteFlowStartAsync(
+    string[] args,
+    CancellationToken cancellationToken)
+{
+    if (args.Length != 5 && args.Length != 7)
+    {
+        return _output.Error(
+            code: "request.invalid",
+            message:
+                "usage: flow start <flow> --business-key <key> [--data <file>]");
+    }
+
+    if (!args[3].Equals(
+            "--business-key",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        return _output.Error(
+            code: "request.invalid",
+            message:
+                "usage: flow start <flow> --business-key <key> [--data <file>]");
+    }
+
+    var flowName = args[2];
+    var businessKey = args[4];
+
+    string? dataPath = null;
+
+    if (args.Length == 7)
+    {
+        if (!args[5].Equals(
+                "--data",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow start <flow> --business-key <key> [--data <file>]");
+        }
+
+        dataPath = args[6];
+    }
+
+    return await _flowStart.ExecuteAsync(
+        flowName,
+        businessKey,
+        dataPath,
+        cancellationToken);
+}
+
+    private async Task<int> ExecuteFlowGetAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 3)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "usage: flow get <process-id>");
+        }
+
+        if (!Guid.TryParse(
+                args[2],
+                out var processId))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "process-id must be a valid UUID");
+        }
+
+        return await _flowGet.ExecuteAsync(
+            processId,
+            cancellationToken);
+    }
+
+
+    private async Task<int> ExecuteFlowSignalAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length != 9)
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow signal <process-id> --type <type> --message-id <id> --payload <file>");
+        }
+
+        if (!Guid.TryParse(
+                args[2],
+                out var processId))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message: "process-id must be a valid UUID");
+        }
+
+        if (!args[3].Equals(
+                "--type",
+                StringComparison.OrdinalIgnoreCase)
+            ||
+            !args[5].Equals(
+                "--message-id",
+                StringComparison.OrdinalIgnoreCase)
+            ||
+            !args[7].Equals(
+                "--payload",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return _output.Error(
+                code: "request.invalid",
+                message:
+                    "usage: flow signal <process-id> --type <type> --message-id <id> --payload <file>");
+        }
+
+        return await _flowSignal.ExecuteAsync(
+            processId,
+            args[4],
+            args[6],
+            args[8],
             cancellationToken);
     }
 

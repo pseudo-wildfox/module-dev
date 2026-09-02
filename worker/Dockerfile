@@ -4,11 +4,13 @@ WORKDIR /src
 
 COPY worker/Worker.csproj worker/
 COPY contracts/ModuleDev.Contracts.csproj contracts/
+COPY action-runtime/ModuleDev.ActionRuntime.csproj action-runtime/
 
 RUN dotnet restore worker/Worker.csproj
 
 COPY worker/ worker/
 COPY contracts/ contracts/
+COPY action-runtime/ action-runtime/
 
 RUN dotnet publish worker/Worker.csproj \
     -c Release \
