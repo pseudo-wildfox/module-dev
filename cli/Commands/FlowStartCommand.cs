@@ -54,7 +54,7 @@ public sealed class FlowStartCommand
         var data = dataResult.Data;
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =
@@ -304,7 +304,7 @@ public sealed class FlowStartCommand
         }
     }
 
-    private static async Task<ActiveFlow?> ResolveActiveFlowAsync(
+   private static async Task<ActiveFlow?> ResolveActiveFlowAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string flowName,
@@ -321,9 +321,8 @@ public sealed class FlowStartCommand
             INNER JOIN workflow.flow_version AS fv
                 ON fv.flow_definition_id = fd.id
             WHERE fd.flow_name = @flow_name
-              AND fv.is_active = true
-              AND fv.status = 'PUBLISHED'
-            FOR UPDATE OF fd, fv;
+            AND fv.is_active = true
+            AND fv.status = 'PUBLISHED';
             """;
 
         await using var command =

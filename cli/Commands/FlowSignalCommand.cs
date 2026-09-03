@@ -72,7 +72,7 @@ public sealed class FlowSignalCommand
         var bodyHash = CalculateSha256(bodyJson);
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =
