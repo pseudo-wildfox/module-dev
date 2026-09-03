@@ -65,6 +65,14 @@ public sealed class TestApplicationFactory
         Environment.SetEnvironmentVariable(
             "DB_PASSWORD",
             postgres.Password);
+
+        Environment.SetEnvironmentVariable(
+            "DB_PUBLISHER_USER",
+            "course_publisher");
+
+        Environment.SetEnvironmentVariable(
+            "DB_PUBLISHER_PASSWORD",
+            "test-publisher-password");
     }
 
     protected override void ConfigureWebHost(

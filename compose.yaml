@@ -27,6 +27,8 @@ services:
       DB_NAME: course
       DB_USER: course_migrator
       DB_PASSWORD: ${COURSE_MIGRATOR_PASSWORD:-dev-migrator-password}
+      DB_PUBLISHER_USER: course_publisher
+      DB_PUBLISHER_PASSWORD: ${COURSE_PUBLISHER_PASSWORD:-dev-publisher-password}
     volumes:
       - ./db/migrations:/migrations:ro
     depends_on:
