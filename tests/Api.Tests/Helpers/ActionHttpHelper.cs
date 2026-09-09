@@ -10,16 +10,17 @@ public static class ActionHttpHelper
     public static HttpRequestMessage CreatePaymentRequest(
         string? idempotencyKey,
         object payload,
-        string token)
+        string? accessToken)
     {
         var request = new HttpRequestMessage(
             HttpMethod.Post,
             "/api/payment/request");
 
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                token);
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", accessToken);
+        }
 
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
