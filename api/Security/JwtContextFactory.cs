@@ -7,9 +7,9 @@ public sealed class JwtContextFactory
     public TrustedPrincipal CreatePrincipal(
         ClaimsPrincipal principal)
     {
-        var sub = GetRequiredClaim(principal, "sub");
-        var consumer = GetRequiredClaim(principal, "consumer");
-        var scope = GetOptionalClaim(principal, "scope");
+        var sub = GetRequiredStringClaim(principal, "sub");
+        var consumer = GetRequiredStringClaim(principal, "consumer");
+        var scope = GetOptionalStringClaim(principal, "scope");
 
         var scopes = scope
             .Split(
@@ -25,7 +25,7 @@ public sealed class JwtContextFactory
             scopes);
     }
 
-    private static string GetRequiredClaim(
+    private static string GetRequiredStringClaim(
         ClaimsPrincipal principal,
         string name)
     {
@@ -38,13 +38,43 @@ public sealed class JwtContextFactory
                 $"Required claim '{name}' is missing.");
         }
 
+        if (claim.ValueType != ClaimValueTypes.String)
+        {
+            throw new InvalidJwtClaimException(
+                $"Claim '{name}' must be a string.");
+        }
+
         return claim.Value;
     }
-    private static string GetOptionalClaim(
-    ClaimsPrincipal principal,
-    string name)
+
+    private static string GetOptionalStringClaim(
+        ClaimsPrincipal principal,
+        string name)
     {
-        return principal.FindFirst(name)?.Value ?? string.Empty;
+        var claims = principal
+            .FindAll(name)
+            .ToArray();
+
+        if (claims.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (claims.Length > 1)
+        {
+            throw new InvalidJwtClaimException(
+                $"Claim '{name}' must occur at most once.");
+        }
+
+        var claim = claims[0];
+
+        if (claim.ValueType != ClaimValueTypes.String)
+        {
+            throw new InvalidJwtClaimException(
+                $"Claim '{name}' must be a string.");
+        }
+
+        return claim.Value;
     }
 }
 

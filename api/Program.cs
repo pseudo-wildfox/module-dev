@@ -3,6 +3,7 @@ using ModuleDev.Api.OpenApi;
 using Npgsql;
 using System.Text.Json;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -81,12 +82,44 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(signingKey)),
 
+            ValidAlgorithms = new[]
+            {
+                SecurityAlgorithms.HmacSha256
+            },
+
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
 
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var authorization =
+                    context.HttpContext.Request.Headers.Authorization
+                        .ToString();
+
+                if (authorization.StartsWith(
+                        "Bearer ",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var token = authorization["Bearer ".Length..].Trim();
+
+                    try
+                    {
+                        JwtRawPayloadValidator.Validate(token);
+
+                        context.Token = token;
+                    }
+                    catch (InvalidJwtClaimException ex)
+                    {
+                        context.Fail(ex.Message);
+                    }
+                }
+
+                return Task.CompletedTask;
+            },
+
             OnChallenge = async context =>
             {
                 context.HandleResponse();
