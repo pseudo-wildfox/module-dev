@@ -1,17 +1,31 @@
 -- ============================================================
 -- 013_action_dispatch_evidence.sql
 --
--- Record runtime dispatch evidence inside the same transaction
--- as api.invoke().
+-- Runtime dispatch evidence.
 --
--- Important:
---   course_runtime must not INSERT directly into
---   runtime.action_dispatches.
+-- api.invoke() is SECURITY DEFINER and records dispatch
+-- evidence inside the same transaction as the target action.
 --
--- api.invoke() is SECURITY DEFINER and writes the evidence
--- using the trusted course_owner privileges.
+-- Target functions are resolved only through the immutable
+-- action catalog and must have the exact signature:
+--
+--   (jsonb, jsonb) RETURNS jsonb
+--
+-- course_runtime can EXECUTE api.invoke() but cannot directly
+-- INSERT into runtime.action_dispatches.
 -- ============================================================
 
+
+-- ------------------------------------------------------------
+-- pgcrypto is required for digest(..., 'sha256').
+-- ------------------------------------------------------------
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+
+-- ------------------------------------------------------------
+-- api.invoke
+-- ------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION api.invoke(
     p_module text,
@@ -30,6 +44,8 @@ DECLARE
     v_target_function text;
     v_required_policy jsonb;
 
+    v_target_oid oid;
+
     v_result jsonb;
     v_missing_policy text;
 
@@ -39,12 +55,6 @@ DECLARE
     v_correlation_id uuid;
     v_outcome text;
 BEGIN
-
-    -- --------------------------------------------------------
-    -- Enable_pgcrypto
-    -- --------------------------------------------------------
-
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
     -- --------------------------------------------------------
     -- Resolve enabled action from immutable catalog.
@@ -96,7 +106,6 @@ BEGIN
     )
     LIMIT 1;
 
-
     IF v_missing_policy IS NOT NULL THEN
         RETURN jsonb_build_object(
             'status', 'error',
@@ -126,17 +135,11 @@ BEGIN
     -- Obtain the exact payload hash used by the C# runtime
     -- for idempotent actions.
     --
-    -- For payment.request this is the authoritative hash:
+    -- For an idempotent action, the authoritative hash is the
+    -- value reserved by the C# runtime in runtime.idempotency.
     --
-    --   C# JsonElement.GetRawText()
-    --          ->
-    --   SHA-256
-    --          ->
-    --   runtime.idempotency.payload_hash
-    --
-    -- If there is no idempotency record (for example a
-    -- non-idempotent action), use a deterministic PostgreSQL
-    -- fallback hash.
+    -- For a non-idempotent action, use a deterministic fallback
+    -- hash of the payload.
     -- --------------------------------------------------------
 
     IF v_request_id IS NOT NULL THEN
@@ -195,7 +198,7 @@ BEGIN
     IF v_payload_hash IS NULL THEN
         v_payload_hash :=
             encode(
-                digest(
+                public.digest(
                     convert_to(
                         p_payload::text,
                         'UTF8'
@@ -208,7 +211,55 @@ BEGIN
 
 
     -- --------------------------------------------------------
+    -- Validate exact target function signature.
+    --
+    -- The registered target must be:
+    --
+    --   <target_schema>.<target_function>(
+    --       jsonb,
+    --       jsonb
+    --   ) RETURNS jsonb
+    --
+    -- The function must be an ordinary PostgreSQL function
+    -- (not a procedure, aggregate, window function, etc.).
+    --
+    -- IMPORTANT:
+    --   The target is still resolved exclusively from the
+    --   immutable action catalog.
+    -- --------------------------------------------------------
+
+    SELECT p.oid
+    INTO v_target_oid
+    FROM pg_proc p
+    JOIN pg_namespace n
+      ON n.oid = p.pronamespace
+    WHERE n.nspname = v_target_schema
+      AND p.proname = v_target_function
+      AND p.prokind = 'f'
+      AND p.pronargs = 2
+      AND p.proargtypes =
+          ARRAY[
+              'jsonb'::regtype,
+              'jsonb'::regtype
+          ]::oidvector
+      AND p.prorettype = 'jsonb'::regtype;
+
+    IF v_target_oid IS NULL THEN
+        RETURN jsonb_build_object(
+            'status', 'error',
+            'code', 'internal.error',
+            'message', 'Action target is invalid.',
+            'retryable', false,
+            'details', '{}'::jsonb
+        );
+    END IF;
+
+
+    -- --------------------------------------------------------
     -- Call only the target registered in the immutable catalog.
+    --
+    -- Identifiers are quoted with %I and originate exclusively
+    -- from the trusted catalog.
     -- --------------------------------------------------------
 
     EXECUTE format(
@@ -221,13 +272,11 @@ BEGIN
 
 
     -- --------------------------------------------------------
-    -- Record successful runtime dispatch evidence.
+    -- Record runtime dispatch evidence.
     --
-    -- This INSERT executes inside the same transaction as the
-    -- target function.
-    --
-    -- If C# later rejects the result and rolls the transaction
-    -- back, the dispatch record is rolled back as well.
+    -- This INSERT is part of the same transaction as the target
+    -- function. If the caller later rolls the transaction back,
+    -- this evidence row is rolled back as well.
     -- --------------------------------------------------------
 
     v_outcome :=
@@ -271,6 +320,10 @@ BEGIN
 END;
 $$;
 
+
+-- ------------------------------------------------------------
+-- Ownership and privileges
+-- ------------------------------------------------------------
 
 ALTER FUNCTION api.invoke(
     text,

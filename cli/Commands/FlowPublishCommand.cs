@@ -111,7 +111,7 @@ public sealed class FlowPublishCommand
         var mapHash = CalculateMapHash(map);
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =
@@ -247,8 +247,7 @@ public sealed class FlowPublishCommand
         const string selectSql = """
             SELECT id
             FROM workflow.flow_definition
-            WHERE flow_name = @flow_name
-            FOR UPDATE;
+            WHERE flow_name = @flow_name;
             """;
 
         await using var selectCommand =
@@ -285,8 +284,7 @@ public sealed class FlowPublishCommand
             SELECT manifest_hash
             FROM workflow.flow_version
             WHERE flow_definition_id = @flow_definition_id
-              AND version = @version
-            FOR UPDATE;
+            AND version = @version;
             """;
 
         await using var command =

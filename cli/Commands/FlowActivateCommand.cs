@@ -23,7 +23,7 @@ public sealed class FlowActivateCommand
         CancellationToken cancellationToken = default)
     {
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =
@@ -35,8 +35,7 @@ public sealed class FlowActivateCommand
             const string lockFlowSql = """
                 SELECT id
                 FROM workflow.flow_definition
-                WHERE flow_name = @flow_name
-                FOR UPDATE;
+                WHERE flow_name = @flow_name;
                 """;
 
             long flowDefinitionId;
@@ -71,9 +70,8 @@ public sealed class FlowActivateCommand
                 SELECT id
                 FROM workflow.flow_version
                 WHERE flow_definition_id = @flow_definition_id
-                  AND version = @version
-                  AND status = 'PUBLISHED'
-                FOR UPDATE;
+                AND version = @version
+                AND status = 'PUBLISHED';
                 """;
 
             long flowVersionId;

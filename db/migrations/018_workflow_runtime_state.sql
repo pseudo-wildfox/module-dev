@@ -605,3 +605,39 @@ CREATE INDEX IF NOT EXISTS ix_event_step
 
 ALTER TABLE workflow.workflow_event
     OWNER TO course_owner;
+
+
+-- ============================================================
+-- 7. course_publisher permissions
+--      cli flow
+-- ============================================================
+
+
+GRANT SELECT, INSERT, UPDATE
+    ON workflow.process_instance
+    TO course_publisher;
+
+
+GRANT SELECT, INSERT
+    ON workflow.step_instance
+    TO course_publisher;
+
+
+GRANT SELECT, INSERT
+    ON workflow.workflow_job
+    TO course_publisher;
+
+
+GRANT INSERT
+    ON workflow.workflow_event
+    TO course_publisher;
+
+
+GRANT SELECT 
+    ON workflow.task_attempt 
+    TO course_publisher;
+
+
+GRANT SELECT, INSERT, UPDATE
+    ON workflow.workflow_signal
+    TO course_publisher;

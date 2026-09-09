@@ -21,7 +21,7 @@ public sealed class ActionListCommand
         CancellationToken cancellationToken = default)
     {
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         const string sql = """

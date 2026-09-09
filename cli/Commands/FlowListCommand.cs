@@ -38,7 +38,7 @@ public sealed class FlowListCommand
         try
         {
             await using var connection =
-                await _database.OpenConnectionAsync(
+                await _database.OpenPublisherConnectionAsync(
                     cancellationToken);
 
             await using var command =

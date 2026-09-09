@@ -4,52 +4,22 @@ namespace ModuleDev.Cli.Database;
 
 public sealed class CliDatabase
 {
-    public async Task<NpgsqlConnection> OpenConnectionAsync(
+    public Task<NpgsqlConnection> OpenConnectionAsync(
         CancellationToken cancellationToken = default)
     {
-        var host = GetRequiredEnvironmentVariable("DB_HOST");
+        return OpenConnectionAsync(
+            usernameVariable: "DB_USER",
+            passwordVariable: "DB_PASSWORD",
+            cancellationToken);
+    }
 
-        var port = GetEnvironmentVariable("DB_PORT", "5432");
-
-        var database = GetRequiredEnvironmentVariable("DB_NAME");
-
-        var username = GetRequiredEnvironmentVariable("DB_USER");
-
-        var password = GetRequiredEnvironmentVariable("DB_PASSWORD");
-
-        if (!int.TryParse(port, out var portNumber))
-        {
-            throw new InvalidOperationException(
-                $"environment variable 'DB_PORT' has invalid value: '{port}'");
-        }
-
-        var builder = new NpgsqlConnectionStringBuilder
-        {
-            Host = host,
-            Port = portNumber,
-            Database = database,
-            Username = username,
-            Password = password,
-            ApplicationName = "moduledev-cli",
-            Timeout = 10,
-            CommandTimeout = 30,
-            Pooling = false
-        };
-
-        var connection = new NpgsqlConnection(
-            builder.ConnectionString);
-
-        try
-        {
-            await connection.OpenAsync(cancellationToken);
-
-            return connection;
-        }
-        catch
-        {
-            await connection.DisposeAsync();
-            throw;
-        }
+    public async Task<NpgsqlConnection> OpenPublisherConnectionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await OpenConnectionAsync(
+            usernameVariable: "DB_PUBLISHER_USER",
+            passwordVariable: "DB_PUBLISHER_PASSWORD",
+            cancellationToken);
     }
 
     public async Task<NpgsqlConnection> OpenOwnerConnectionAsync(
@@ -87,6 +57,63 @@ public sealed class CliDatabase
 
         await command.ExecuteNonQueryAsync(
             cancellationToken);
+    }
+
+    private static async Task<NpgsqlConnection> OpenConnectionAsync(
+        string usernameVariable,
+        string passwordVariable,
+        CancellationToken cancellationToken)
+    {
+        var host = GetRequiredEnvironmentVariable("DB_HOST");
+
+        var port = GetEnvironmentVariable(
+            "DB_PORT",
+            "5432");
+
+        var database = GetRequiredEnvironmentVariable("DB_NAME");
+
+        var username = GetRequiredEnvironmentVariable(
+            usernameVariable);
+
+        var password = GetRequiredEnvironmentVariable(
+            passwordVariable);
+
+        if (!int.TryParse(
+                port,
+                out var portNumber))
+        {
+            throw new InvalidOperationException(
+                $"environment variable 'DB_PORT' has invalid value: '{port}'");
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = host,
+            Port = portNumber,
+            Database = database,
+            Username = username,
+            Password = password,
+            ApplicationName = "moduledev-cli",
+            Timeout = 10,
+            CommandTimeout = 30,
+            Pooling = false
+        };
+
+        var connection = new NpgsqlConnection(
+            builder.ConnectionString);
+
+        try
+        {
+            await connection.OpenAsync(
+                cancellationToken);
+
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
     }
 
     private static string GetRequiredEnvironmentVariable(

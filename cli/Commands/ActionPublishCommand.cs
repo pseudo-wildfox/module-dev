@@ -76,7 +76,7 @@ public sealed class ActionPublishCommand
             manifest);
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =

@@ -40,7 +40,7 @@ public sealed class ActionActivateCommand
         }
 
         await using var connection =
-            await _database.OpenConnectionAsync(
+            await _database.OpenPublisherConnectionAsync(
                 cancellationToken);
 
         await using var transaction =
