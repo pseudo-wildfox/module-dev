@@ -19,6 +19,11 @@ using ModuleDev.Workflow;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 1024 * 1024;
+});
+
 var schemaPath = Path.Combine(
     AppContext.BaseDirectory,
     "contracts",
