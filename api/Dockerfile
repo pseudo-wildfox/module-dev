@@ -28,6 +28,8 @@ COPY --from=build /app/publish .
 
 COPY contracts ./contracts
 
+USER app
+
 ENV ASPNETCORE_URLS=http://+:8080
 
 EXPOSE 8080
