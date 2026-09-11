@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ModuleDev.Api.Security;
+namespace ModuleDev.ActionRuntime;
 
 public sealed record TrustedContext(
     [property: JsonPropertyName("principal")]

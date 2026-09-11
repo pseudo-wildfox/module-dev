@@ -1,4 +1,4 @@
-namespace ModuleDev.Api.Runtime;
+namespace ModuleDev.ActionRuntime;
 
 public sealed class ActionTimeoutException : Exception
 {

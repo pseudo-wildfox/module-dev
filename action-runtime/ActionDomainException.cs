@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ModuleDev.Api.Runtime;
+namespace ModuleDev.ActionRuntime;
 
 public sealed class ActionDomainException : Exception
 {

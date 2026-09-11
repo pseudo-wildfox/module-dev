@@ -2,7 +2,7 @@ using System.Text.Json;
 using Json.Schema;
 using ModuleDev.Contracts;
 
-namespace ModuleDev.Api.Runtime;
+namespace ModuleDev.ActionRuntime;
 
 public sealed class ActionResponseValidator
 {

@@ -4,7 +4,7 @@ using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace ModuleDev.Api.Runtime;
+namespace ModuleDev.ActionRuntime;
 
 public sealed class IdempotencyStore
 {
