@@ -15,7 +15,8 @@ public sealed class ActionExecutor
     public ActionExecutor(
         DbConnectionFactory connectionFactory,
         ActionResponseValidator responseValidator,
-        IdempotencyStore idempotencyStore)
+        IdempotencyStore idempotencyStore
+    )
     {
         _connectionFactory = connectionFactory;
         _responseValidator = responseValidator;
@@ -27,14 +28,12 @@ public sealed class ActionExecutor
         TrustedContext context,
         JsonDocument payload,
         string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        using var timeoutCts =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var remaining =
-            context.Deadline - DateTimeOffset.UtcNow;
+        var remaining = context.Deadline - DateTimeOffset.UtcNow;
 
         if (remaining <= TimeSpan.Zero)
         {
@@ -43,234 +42,226 @@ public sealed class ActionExecutor
 
         timeoutCts.CancelAfter(remaining);
 
-        var executionToken =
-            timeoutCts.Token;
+        var executionToken = timeoutCts.Token;
 
-        NpgsqlTransaction? transaction = null;
+        await using var connection = await _connectionFactory.OpenAsync(executionToken);
+
+        await using var transaction = await connection.BeginTransactionAsync(executionToken);
 
         try
         {
-            await using var connection =
-                await _connectionFactory.OpenAsync(
-                    executionToken);
+            var result = await ExecuteAsync(
+                manifest,
+                context,
+                payload,
+                idempotencyKey,
+                connection,
+                transaction,
+                executionToken
+            );
 
-            transaction =
-                await connection.BeginTransactionAsync(
-                    executionToken);
+            await transaction.CommitAsync(executionToken);
 
-            using var contextJson =
-                JsonSerializer.SerializeToDocument(context);
-
-            string? scopeKey = null;
-
-            if (manifest.IdempotencyMode == "required" &&
-                string.IsNullOrWhiteSpace(idempotencyKey))
+            return result;
+        }
+        catch
+        {
+            try
             {
-                throw new ActionExecutionException(
-                    "Idempotency-Key is required.");
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // The original exception is more important
+                // than a rollback failure.
             }
 
-            if (manifest.IdempotencyMode != "none" &&
-                !string.IsNullOrWhiteSpace(idempotencyKey))
+            throw;
+        }
+    }
+
+    public async Task<string> ExecuteAsync(
+        ActionManifest manifest,
+        TrustedContext context,
+        JsonDocument payload,
+        string? idempotencyKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        var remaining = context.Deadline - DateTimeOffset.UtcNow;
+
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new ActionTimeoutException();
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        timeoutCts.CancelAfter(remaining);
+
+        var executionToken = timeoutCts.Token;
+
+        using var contextJson = JsonSerializer.SerializeToDocument(context);
+
+        string? scopeKey = null;
+
+        if (manifest.IdempotencyMode == "required" && string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new ActionExecutionException("Idempotency-Key is required.");
+        }
+
+        if (manifest.IdempotencyMode != "none" && !string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            scopeKey = _idempotencyStore.BuildScopeKey(
+                manifest.IdempotencyScope,
+                context.Principal,
+                context.Consumer,
+                manifest.Module,
+                manifest.Action
+            );
+
+            var payloadHash = _idempotencyStore.CalculatePayloadHash(payload.RootElement);
+
+            var reservation = await _idempotencyStore.ReserveAsync(
+                connection,
+                transaction,
+                scopeKey,
+                idempotencyKey,
+                payloadHash,
+                executionToken
+            );
+
+            switch (reservation.Kind)
             {
-                scopeKey =
-                    _idempotencyStore.BuildScopeKey(
-                        manifest.IdempotencyScope,
-                        context.Principal,
-                        context.Consumer,
-                        manifest.Module,
-                        manifest.Action);
+                case IdempotencyReservationKind.Conflict:
 
-                var payloadHash =
-                    _idempotencyStore.CalculatePayloadHash(
-                        payload.RootElement);
+                    throw new IdempotencyConflictException();
 
-                var reservation =
-                    await _idempotencyStore.ReserveAsync(
-                        connection,
-                        transaction,
-                        scopeKey,
-                        idempotencyKey,
-                        payloadHash,
-                        executionToken);
+                case IdempotencyReservationKind.Replay:
 
-                switch (reservation.Kind)
-                {
-                    case IdempotencyReservationKind.Conflict:
+                    return reservation.ResponseJson
+                        ?? throw new InvalidOperationException(
+                            "Idempotency replay has no response."
+                        );
 
-                        throw new IdempotencyConflictException();
+                case IdempotencyReservationKind.New:
+                    break;
 
-                    case IdempotencyReservationKind.Replay:
-
-                        await transaction.CommitAsync(
-                            executionToken);
-
-                        return reservation.ResponseJson
-                            ?? throw new InvalidOperationException(
-                                "Idempotency replay has no response.");
-
-                    case IdempotencyReservationKind.New:
-                        break;
-
-                    default:
-                        throw new InvalidOperationException(
-                            "Unknown idempotency reservation state.");
-                }
+                default:
+                    throw new InvalidOperationException("Unknown idempotency reservation state.");
             }
+        }
 
-            await using var command =
-                new NpgsqlCommand(
-                    """
-                    SELECT api.invoke(
-                        @module,
-                        @action,
-                        @version,
-                        @context,
-                        @payload
-                    );
-                    """,
-                    connection,
-                    transaction);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT api.invoke(
+                @module,
+                @action,
+                @version,
+                @context,
+                @payload
+            );
+            """,
+            connection,
+            transaction
+        );
 
-            command.Parameters.Add(
-                new NpgsqlParameter(
-                    "module",
-                    NpgsqlDbType.Text)
-                {
-                    Value = manifest.Module
-                });
+        command.Parameters.Add(
+            new NpgsqlParameter("module", NpgsqlDbType.Text) { Value = manifest.Module }
+        );
 
-            command.Parameters.Add(
-                new NpgsqlParameter(
-                    "action",
-                    NpgsqlDbType.Text)
-                {
-                    Value = manifest.Action
-                });
+        command.Parameters.Add(
+            new NpgsqlParameter("action", NpgsqlDbType.Text) { Value = manifest.Action }
+        );
 
-            command.Parameters.Add(
-                new NpgsqlParameter(
-                    "version",
-                    NpgsqlDbType.Integer)
-                {
-                    Value = manifest.Version
-                });
+        command.Parameters.Add(
+            new NpgsqlParameter("version", NpgsqlDbType.Integer) { Value = manifest.Version }
+        );
 
-            command.Parameters.Add(
-                new NpgsqlParameter(
-                    "context",
-                    NpgsqlDbType.Jsonb)
-                {
-                    Value = contextJson
-                });
+        command.Parameters.Add(
+            new NpgsqlParameter("context", NpgsqlDbType.Jsonb) { Value = contextJson }
+        );
 
-            command.Parameters.Add(
-                new NpgsqlParameter(
-                    "payload",
-                    NpgsqlDbType.Jsonb)
-                {
-                    Value = payload
-                });
+        command.Parameters.Add(
+            new NpgsqlParameter("payload", NpgsqlDbType.Jsonb) { Value = payload }
+        );
 
-            var remainingForCommand =
-                context.Deadline - DateTimeOffset.UtcNow;
+        var remainingForCommand = context.Deadline - DateTimeOffset.UtcNow;
 
-            if (remainingForCommand <= TimeSpan.Zero)
-            {
-                throw new ActionTimeoutException();
-            }
+        if (remainingForCommand <= TimeSpan.Zero)
+        {
+            throw new ActionTimeoutException();
+        }
 
-            command.CommandTimeout =
-                Math.Clamp(
-                    (int)Math.Ceiling(
-                        remainingForCommand.TotalSeconds),
-                    1,
-                    30);
+        command.CommandTimeout = Math.Clamp(
+            (int)Math.Ceiling(remainingForCommand.TotalSeconds),
+            1,
+            30
+        );
 
-            var value =
-                await command.ExecuteScalarAsync(
-                    executionToken);
+        try
+        {
+            var value = await command.ExecuteScalarAsync(executionToken);
 
             var responseJson =
                 value?.ToString()
-                ?? throw new InvalidOperationException(
-                    "api.invoke returned NULL.");
+                ?? throw new InvalidOperationException("api.invoke returned NULL.");
 
-            using var response =
-                JsonDocument.Parse(responseJson);
+            using var response = JsonDocument.Parse(responseJson);
 
-            var validation =
-                _responseValidator.Validate(
-                    manifest,
-                    response.RootElement);
+            var validation = _responseValidator.Validate(manifest, response.RootElement);
 
             if (validation.IsDomainError)
             {
-                var errorResponse =
-                    response.RootElement;
+                var errorResponse = response.RootElement;
 
-                var code =
-                    errorResponse.TryGetProperty(
-                        "code",
-                        out var codeProperty)
-                        ? codeProperty.GetString()
-                        : null;
+                var code = errorResponse.TryGetProperty("code", out var codeProperty)
+                    ? codeProperty.GetString()
+                    : null;
 
-                var message =
-                    errorResponse.TryGetProperty(
-                        "message",
-                        out var messageProperty)
-                        ? messageProperty.GetString()
-                        : null;
+                var message = errorResponse.TryGetProperty("message", out var messageProperty)
+                    ? messageProperty.GetString()
+                    : null;
 
                 var retryable =
-                    errorResponse.TryGetProperty(
-                        "retryable",
-                        out var retryableProperty) &&
-                    retryableProperty.ValueKind ==
-                        JsonValueKind.True;
+                    errorResponse.TryGetProperty("retryable", out var retryableProperty)
+                    && retryableProperty.ValueKind == JsonValueKind.True;
 
-                var details =
-                    errorResponse.TryGetProperty(
-                        "details",
-                        out var detailsProperty)
-                        ? detailsProperty
-                        : JsonSerializer.SerializeToElement(
-                            new { });
+                var details = errorResponse.TryGetProperty("details", out var detailsProperty)
+                    ? detailsProperty
+                    : JsonSerializer.SerializeToElement(new { });
 
                 throw new ActionDomainException(
                     code ?? "internal.error",
                     message ?? "action returned a domain error.",
                     retryable,
-                    details);
+                    details
+                );
             }
 
             if (!validation.IsValid)
             {
                 throw new ActionExecutionException(
-                    validation.ErrorMessage
-                    ?? "action result violates the declared contract.");
+                    validation.ErrorMessage ?? "action result violates the declared contract."
+                );
             }
 
             var finalResponse =
                 JsonNode.Parse(responseJson)?.AsObject()
-                ?? throw new ActionExecutionException(
-                    "action result is not a JSON object.");
+                ?? throw new ActionExecutionException("action result is not a JSON object.");
 
             finalResponse["meta"] = new JsonObject
             {
-                ["correlationId"] =
-                    context.CorrelationId.ToString(),
+                ["correlationId"] = context.CorrelationId.ToString(),
 
-                ["actionVersion"] =
-                    manifest.Version
+                ["actionVersion"] = manifest.Version,
             };
 
-            var finalResponseJson =
-                finalResponse.ToJsonString();
+            var finalResponseJson = finalResponse.ToJsonString();
 
-            if (scopeKey is not null &&
-                !string.IsNullOrWhiteSpace(idempotencyKey))
+            if (scopeKey is not null && !string.IsNullOrWhiteSpace(idempotencyKey))
             {
                 await _idempotencyStore.CompleteAsync(
                     connection,
@@ -278,44 +269,18 @@ public sealed class ActionExecutor
                     scopeKey,
                     idempotencyKey,
                     finalResponseJson,
-                    executionToken);
+                    executionToken
+                );
             }
-
-            await transaction.CommitAsync(
-                executionToken);
 
             return finalResponseJson;
         }
         catch (OperationCanceledException)
-            when (!cancellationToken.IsCancellationRequested &&
-                  timeoutCts.IsCancellationRequested)
+            when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
         {
             throw new ActionTimeoutException();
         }
-        catch
-        {
-            if (transaction is not null)
-            {
-                try
-                {
-                    await transaction.RollbackAsync(
-                        CancellationToken.None);
-                }
-                catch
-                {
-                    // The original exception is more important
-                    // than a rollback failure.
-                }
-            }
-
-            throw;
-        }
-        finally
-        {
-            if (transaction is not null)
-            {
-                await transaction.DisposeAsync();
-            }
-        }
     }
+
+    
 }
