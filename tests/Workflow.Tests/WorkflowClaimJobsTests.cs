@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 using Workflow.Tests.Helpers;
 
 namespace Workflow.Tests;
@@ -779,4 +780,177 @@ public sealed class WorkflowClaimJobsTests
         long LeaseVersion,
         int AttemptNumber
     );
+
+    [Fact]
+    public async Task FinishJob_CompletesAutomaticStepAndMovesToWaitSignal()
+    {
+        await _fixture.ResetWorkflowStateAsync();
+
+        var cli = _fixture.CreateCli();
+
+        var scenario = new WorkflowTestScenario(_fixture);
+
+        var started = await scenario.StartAutomaticJobAsync(cli, "finish-test");
+
+        var processId = started.ProcessId;
+
+        Guid jobId;
+        Guid executionId;
+
+        await using (var connection = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+
+            const string sql = """
+                SELECT
+                    job_id,
+                    execution_id
+                FROM workflow.workflow_job
+                WHERE process_id = @process_id;
+                """;
+
+            await using var command = new NpgsqlCommand(sql, connection);
+
+            command.Parameters.AddWithValue("process_id", processId);
+
+            await using var jobReader = await command.ExecuteReaderAsync();
+
+            Assert.True(await jobReader.ReadAsync());
+
+            jobId = jobReader.GetGuid(0);
+
+            executionId = jobReader.GetGuid(1);
+
+            Assert.False(await jobReader.ReadAsync());
+        }
+
+        ClaimedJob claimed;
+
+        await using (var connection = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+
+            claimed = await WorkflowTestScenario.ClaimJobAsync(
+                connection,
+                "worker-a",
+                TimeSpan.FromSeconds(2)
+            );
+        }
+
+        Assert.Equal(jobId, claimed.JobId);
+
+        Assert.Equal(processId, claimed.ProcessId);
+
+        Assert.Equal(executionId, claimed.ExecutionId);
+
+        Assert.Equal(1L, claimed.LeaseVersion);
+
+        await using (var connection = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+
+            const string sql = """
+                SELECT workflow.finish_job(
+                    @job_id,
+                    @owner,
+                    @lease_version,
+                    @outcome,
+                    @result
+                );
+                """;
+
+            await using var command = new NpgsqlCommand(sql, connection);
+
+            command.Parameters.AddWithValue("job_id", claimed.JobId);
+
+            command.Parameters.AddWithValue("owner", "worker-a");
+
+            command.Parameters.AddWithValue("lease_version", claimed.LeaseVersion);
+
+            command.Parameters.AddWithValue("outcome", "APPLIED");
+
+            var resultParameter = command.Parameters.Add("result", NpgsqlDbType.Jsonb);
+
+            resultParameter.Value = """
+                {
+                  "stored": true
+                }
+                """;
+
+            await command.ExecuteScalarAsync();
+        }
+
+        await using var verifyConnection = new NpgsqlConnection(_fixture.ConnectionString);
+
+        await verifyConnection.OpenAsync();
+
+        const string verifySql = """
+            SELECT
+                j.state,
+                j.lease_owner,
+                j.lease_version,
+                j.attempt_count,
+
+                a.status,
+                a.outcome,
+                a.lease_version AS attempt_lease_version,
+
+                s.state AS step_state,
+                s.outcome AS step_outcome,
+
+                p.state AS process_state,
+                p.current_step_key
+
+            FROM workflow.workflow_job AS j
+
+            JOIN workflow.task_attempt AS a
+              ON a.job_id = j.job_id
+
+            JOIN workflow.step_instance AS s
+              ON s.step_instance_id = j.step_instance_id
+             AND s.process_id = j.process_id
+
+            JOIN workflow.process_instance AS p
+              ON p.process_id = j.process_id
+
+            WHERE j.job_id = @job_id
+            ORDER BY a.attempt_number;
+            """;
+
+        await using var verifyCommand = new NpgsqlCommand(verifySql, verifyConnection);
+
+        verifyCommand.Parameters.AddWithValue("job_id", claimed.JobId);
+
+        await using var reader = await verifyCommand.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+
+        // Job was successfully finished.
+        Assert.Equal("SUCCEEDED", reader.GetString(0));
+
+        Assert.True(reader.IsDBNull(1));
+
+        Assert.Equal(claimed.LeaseVersion, reader.GetInt64(2));
+
+        Assert.Equal(1, reader.GetInt32(3));
+
+        // Attempt was successfully finished.
+        Assert.Equal("SUCCEEDED", reader.GetString(4));
+
+        Assert.Equal("APPLIED", reader.GetString(5));
+
+        Assert.Equal(claimed.LeaseVersion, reader.GetInt64(6));
+
+        // Current automatic step was completed.
+        Assert.Equal("COMPLETED", reader.GetString(7));
+
+        Assert.Equal("APPLIED", reader.GetString(8));
+
+        // Transition APPLIED moved the process to wait_result.
+        Assert.Equal("WAITING_SIGNAL", reader.GetString(9));
+
+        Assert.Equal("wait_result", reader.GetString(10));
+
+        Assert.False(await reader.ReadAsync());
+    }
 }
