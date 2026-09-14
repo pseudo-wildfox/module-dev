@@ -56,6 +56,7 @@ public sealed class WorkflowTestCli
         startInfo.ArgumentList.Add("run");
         startInfo.ArgumentList.Add("--project");
         startInfo.ArgumentList.Add(_cliProject);
+        startInfo.ArgumentList.Add("--no-build");
         startInfo.ArgumentList.Add("--");
 
         foreach (var argument in arguments)
