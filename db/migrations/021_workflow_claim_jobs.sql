@@ -214,3 +214,15 @@ BEGIN
     WHERE si.step_type = 'AUTOMATIC';
 END;
 $$;
+
+-- ============================================================
+-- Workflow worker execution boundaries
+-- ============================================================
+
+GRANT EXECUTE
+    ON FUNCTION workflow.claim_jobs(
+        text,
+        integer,
+        interval
+    )
+    TO workflow_worker;
